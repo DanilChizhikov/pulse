@@ -76,7 +76,7 @@ namespace DTech.Pulse
 			return this;
 		}
 
-		public IInitializationNodeHandle SetCritical()
+		public IInitializationNodeHandle SetAsCritical()
 		{
 			if (_isProcessed)
 			{

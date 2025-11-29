@@ -105,8 +105,8 @@ namespace DTech.Pulse.Tests
             var critical2 = new CriticalSystemB();
             var nonCritical = new SimpleSystem(null);
 
-            builder.AddSystem(critical1).SetCritical();
-            builder.AddSystem(critical2).SetCritical();
+            builder.AddSystem(critical1).SetAsCritical();
+            builder.AddSystem(critical2).SetAsCritical();
             builder.AddSystem(nonCritical);
 
             var context = builder.Build();
@@ -163,7 +163,7 @@ namespace DTech.Pulse.Tests
             bool aInitialized = false;
             bool criticalInitializedBeforeA = false;
 
-            builder.AddSystem(criticalSystem).SetCritical().OnStartInitialize(type =>
+            builder.AddSystem(criticalSystem).SetAsCritical().OnStartInitialize(type =>
             {
                 criticalInitializedBeforeA = !aInitialized;
             });
@@ -183,7 +183,7 @@ namespace DTech.Pulse.Tests
             var criticalSystem = new CriticalSystem();
             var dummy = new DummySystem();
 
-            builder.AddSystem(criticalSystem).SetCritical();
+            builder.AddSystem(criticalSystem).SetAsCritical();
             builder.AddSystem(dummy).AddDependency<DepA>();
 
             var exception = Assert.Throws<Exception>(() => builder.Build());

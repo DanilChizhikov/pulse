@@ -10,7 +10,7 @@ namespace DTech.Pulse
 		IInitializationNodeHandle AddDependencies(params Type[] dependencies);
 		IInitializationNodeHandle RemoveDependency<T>() where T : IInitializable;
 		IInitializationNodeHandle RemoveDependencies(params Type[] dependencies);
-		IInitializationNodeHandle SetCritical();
+		IInitializationNodeHandle SetAsCritical();
 		IInitializationNodeHandle OnStartInitialize(Action<Type> callback);
 		IInitializationNodeHandle OnCompleteInitialize(Action<Type> callback);
 	}

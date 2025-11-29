@@ -208,7 +208,7 @@ public sealed class GameBootstrap
         var gameplay = new GameplaySystem();
         var analytics = new AnalyticsSystem(db);
 
-        builder.AddSystem(db).SetCritical();            // DB is critical
+        builder.AddSystem(db).SetAsCritical();            // DB as critical
         builder.AddSystem(auth);                        // depends on DB via ctor
         builder.AddSystem(gameplay);                    // depends on Auth via [InitDependency]
         builder.AddSystem(analytics);                   // depends on DB via [InitDependency] ctor
@@ -338,7 +338,7 @@ var db = new DatabaseSystem();
 var auth = new AuthSystem(db);
 
 builder.AddSystem(db)
-       .SetCritical();
+       .SetAsCritical();
 
 builder.AddSystem(auth)
        .OnStartInitialize(type => Console.WriteLine($"Init {type.Name}..."));
@@ -362,7 +362,7 @@ public sealed class InitializationContext
 Represents a compiled initialization plan.
 
 #### `OnCriticalSystemsInitialized`
-Event fired once all critical systems (marked via SetCritical()) have completed initialization.
+Event fired once all critical systems (marked via SetAsCritical()) have completed initialization.
 
 **Example:**
 ```csharp
@@ -406,7 +406,7 @@ public interface IInitializationNodeHandle
     IInitializationNodeHandle RemoveDependency<T>() where T : IInitializable;
     IInitializationNodeHandle RemoveDependencies(params Type[] dependencies);
 
-    IInitializationNodeHandle SetCritical();
+    IInitializationNodeHandle SetAsCritical();
 
     IInitializationNodeHandle OnStartInitialize(Action<Type> callback);
     IInitializationNodeHandle OnCompleteInitialize(Action<Type> callback);
@@ -440,11 +440,11 @@ node.RemoveDependency<AuthSystem>();
 node.RemoveDependencies(typeof(IMySubsystemBase));
 ```
 
-#### SetCritical()
+#### SetAsCritical()
 Marks this system as **critical**.
 The `InitializationContext` will track it and only raise `OnCriticalSystemsInitialized` once all critical systems are done.
 ```csharp
-builder.AddSystem(db).SetCritical();
+builder.AddSystem(db).SetAsCritical();
 ```
 
 #### OnStartInitialize(Action<Type> callback) / OnCompleteInitialize(Action<Type> callback)
