@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using UnityEngine;
 
 namespace DTech.Pulse
 {
@@ -25,7 +24,7 @@ namespace DTech.Pulse
 		public InitializationContext Build()
 		{
 			List<ICollection<InitializationNode>> batches = BuildBatches();
-			return new InitializationContext(batches, _criticalSystems);
+			return new InitializationContext(batches, _criticalSystems, _nodes);
 		}
 		
 		private List<ICollection<InitializationNode>> BuildBatches()

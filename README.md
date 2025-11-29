@@ -361,7 +361,29 @@ public sealed class InitializationContext
 ```
 Represents a compiled initialization plan.
 
-#### `OnCriticalSystemsInitialized`
+#### OnSystemInitializationBegan
+Event fired when a system begins initialization system.
+
+**Example:**
+```csharp
+context.OnSystemInitializationBegan += type =>
+{
+    Debug.Log($"Init {type.Name}...");
+};
+```
+
+#### OnSystemInitializationComplete
+Event fired when a system complete initialization.
+
+**Example:**
+```csharp
+context.OnSystemInitializationComplete += type =>
+{
+    Debug.Log($"Init {type.Name}...");
+};
+```
+
+#### OnCriticalSystemsInitialized
 Event fired once all critical systems (marked via SetAsCritical()) have completed initialization.
 
 **Example:**
