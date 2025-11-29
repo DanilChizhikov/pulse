@@ -1,0 +1,25 @@
+{
+    "name": "com.dtech.pulse",
+    "displayName": "Pulse - Initialization System",
+    "version": "0.1.0",
+    "unity": "2022.3",
+    "dependencies": {
+    },
+    "description": "Initialization system for Unity.",
+    "keywords": [
+        "initialization",
+        "system"
+    ],
+    "category": "Utilities",
+    "author": "DTech",
+    "repository": {
+        "type": "git",
+        "url": "git@github.com:DanilChizhikov/pulse.git",
+        "directory": "com.dtech"
+    },
+    "publishConfig": {
+        "registry": "https://npm.pkg.github.com/@DanilChizhikov"
+    },
+    "license": "MIT"
+  }
+  
