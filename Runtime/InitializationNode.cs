@@ -12,11 +12,11 @@ namespace DTech.Pulse
 		
 		private readonly IInitializable _system;
 		private readonly HashSet<Type> _dependencies;
+		private readonly HashSet<Type> _removedDependencies;
 		
 		public Type SystemType { get; }
 
 		public bool IsCritical { get; private set; }
-		public IReadOnlyCollection<Type> Dependencies => _dependencies;
 		
 		private bool _isProcessed;
 
@@ -26,6 +26,7 @@ namespace DTech.Pulse
 			SystemType = _system.GetType();
 			IsCritical = false;
 			_dependencies = new HashSet<Type>();
+			_removedDependencies = new HashSet<Type>();
 		}
 		
 		public IInitializationNodeHandle AddDependency<T>()
@@ -54,6 +55,27 @@ namespace DTech.Pulse
 			return this;
 		}
 
+		public IInitializationNodeHandle RemoveDependency<T>()
+			where T : IInitializable
+		{
+			return RemoveDependencies(typeof(T));
+		}
+
+		public IInitializationNodeHandle RemoveDependencies(params Type[] dependencies)
+		{
+			if (_isProcessed)
+			{
+				throw new Exception("This node has already been validated. You must remove dependencies before initialization begins.");
+			}
+			
+			foreach (Type dependency in dependencies)
+			{
+				_removedDependencies.Add(dependency);
+			}
+			
+			return this;
+		}
+
 		public IInitializationNodeHandle SetCritical()
 		{
 			if (_isProcessed)
@@ -75,6 +97,30 @@ namespace DTech.Pulse
 		{
 			OnInitializeCompleted += callback;
 			return this;
+		}
+
+		public List<Type> GetDependencies()
+		{
+			if (_isProcessed)
+			{
+				throw new Exception("This node has already been validated. You cannot retrieve dependencies after initialization begins.");
+			}
+			
+			var result = new List<Type>(_dependencies);
+			var dependenciesToRemove = new HashSet<Type>();
+			foreach (Type removableDependency in _removedDependencies)
+			{
+				foreach (Type dependency in _dependencies)
+				{
+					if (removableDependency.IsAssignableFrom(dependency))
+					{
+						dependenciesToRemove.Add(dependency);
+					}
+				}
+			}
+			
+			result.RemoveAll(dependenciesToRemove.Contains);
+			return result;
 		}
 
 		internal async Task InitializeAsync(CancellationToken cancellationToken)

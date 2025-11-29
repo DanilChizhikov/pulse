@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 
 namespace DTech.Pulse
 {
@@ -16,8 +17,13 @@ namespace DTech.Pulse
 			{
 				throw new Exception($"System {node.SystemType.FullName} has already been added");
 			}
+
+			if (_nodes.Add(node))
+			{
+				Type[] dependencies = GetDependencies(system);
+				node.AddDependencies(dependencies);
+			}
 			
-			_nodes.Add(node);
 			return node;
 		}
 		
@@ -26,61 +32,150 @@ namespace DTech.Pulse
 			List<ICollection<InitializationNode>> batches = BuildBatches();
 			return new InitializationContext(batches, _criticalSystems);
 		}
+
+		private static Type[] GetDependencies(object system)
+		{
+			var result = new HashSet<Type>();
+			MemberInfo[] members = system.GetType().GetMembers(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.FlattenHierarchy);
+			foreach (MemberInfo member in members)
+			{
+				var attribute = member.GetCustomAttribute<InitDependencyAttribute>();
+				if (attribute != null)
+				{
+					switch (member)
+					{
+						case FieldInfo fieldInfo:
+						{
+							result.Add(fieldInfo.FieldType);
+						} break;
+
+						case MethodInfo methodInfo:
+						{
+							ParameterInfo[] parameters = methodInfo.GetParameters();
+							foreach (ParameterInfo parameter in parameters)
+							{
+								result.Add(parameter.ParameterType);
+							}
+						} break;
+
+						case PropertyInfo propertyInfo:
+						{
+							result.Add(propertyInfo.PropertyType);
+						} break;
+					}
+				}
+			}
+
+			ConstructorInfo[] constructors = system.GetType().GetConstructors(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+			ConstructorInfo constructorInfo = null;
+			if (constructors.Length > 1)
+			{
+				constructorInfo = GetConstructor(constructors);
+			}
+			else if (constructors.Length == 1)
+			{
+				constructorInfo = constructors[0];
+			}
+
+			if (constructorInfo != null)
+			{
+				result.UnionWith(GetDependencies(constructorInfo));
+			}
+			
+			result.RemoveWhere(type => !typeof(IInitializable).IsAssignableFrom(type));
+			return result.ToArray();
+		}
+
+		private static Type[] GetDependencies(ConstructorInfo constructor)
+		{
+			ParameterInfo[] parameterInfos = constructor.GetParameters();
+			return parameterInfos.Select(parameterInfo => parameterInfo.ParameterType).ToArray();
+		}
+
+		private static ConstructorInfo GetConstructor(IReadOnlyList<ConstructorInfo> constructors)
+		{
+			ConstructorInfo publicConstructor = null;
+			bool hasPublicConstructor = false;
+			for (int i = 0; i < constructors.Count; i++)
+			{
+				ConstructorInfo constructorInfo = constructors[i];
+				var attribute = constructorInfo.GetCustomAttribute<InitDependencyAttribute>();
+				if (attribute != null)
+				{
+					return constructorInfo;
+				}
+
+				if (constructorInfo.IsPublic && !hasPublicConstructor)
+				{
+					publicConstructor = constructorInfo;
+					hasPublicConstructor = true;
+				}
+			}
+
+			return publicConstructor;
+		}
 		
 		private List<ICollection<InitializationNode>> BuildBatches()
 		{
 			var batches = new List<ICollection<InitializationNode>>();
 			_criticalSystems.Clear();
+			
+			var inDegree = new Dictionary<InitializationNode, int>();
+			var adjacency = new Dictionary<InitializationNode, List<InitializationNode>>();
 
-			var remaining = new HashSet<InitializationNode>(_nodes);
-			var dependenciesCount = new Dictionary<InitializationNode, int>();
-            
-			foreach (InitializationNode node in _nodes)
+			foreach (var node in _nodes)
 			{
-				dependenciesCount.Add(node, node.Dependencies.Count);
-				if (node.IsCritical)
-				{
-					_criticalSystems.Add(node);
-				}
+				inDegree[node] = 0;
+				adjacency[node] = new List<InitializationNode>();
 			}
 
-			while (remaining.Any())
+			foreach (var node in _nodes)
 			{
-				var batch = new HashSet<InitializationNode>();
-				foreach (InitializationNode node in remaining)
+				foreach (var depType in node.GetDependencies())
 				{
-					if (dependenciesCount[node] != 0)
+					var depNode = _nodes.FirstOrDefault(n => depType.IsAssignableFrom(n.SystemType));
+					if (depNode != null)
 					{
-						continue;
+						adjacency[depNode].Add(node);
+						inDegree[node]++;
 					}
-                    
+				}
+
+				if (node.IsCritical)
+					_criticalSystems.Add(node);
+			}
+			
+			var queue = new Queue<InitializationNode>(inDegree.Where(kv => kv.Value == 0).Select(kv => kv.Key));
+
+			while (queue.Count > 0)
+			{
+				var batch = new List<InitializationNode>();
+				int batchCount = queue.Count;
+
+				for (int i = 0; i < batchCount; i++)
+				{
+					var node = queue.Dequeue();
 					batch.Add(node);
-				}
-
-				if (!batch.Any())
-				{
-					string cycle = string.Join(", ", remaining.Select(node => node.SystemType.Name));
-					throw new Exception("Cyclic or missing dependencies detected: " + cycle);
-				}
-
-				batches.Add(batch);
-				foreach (InitializationNode node in batch)
-				{
-					remaining.Remove(node);
-					foreach (InitializationNode otherNode in remaining)
+					List<InitializationNode> dependents = adjacency[node];
+					foreach (InitializationNode dependent in dependents)
 					{
-						foreach (Type dependency in otherNode.Dependencies)
+						inDegree[dependent]--;
+						if (inDegree[dependent] == 0)
 						{
-							if (dependency.IsAssignableFrom(node.SystemType))
-							{
-								dependenciesCount[otherNode]--;
-								break;
-							}
+							queue.Enqueue(dependent);
 						}
 					}
 				}
+
+				batches.Add(batch);
 			}
 			
+			if (inDegree.Any(kv => kv.Value > 0))
+			{
+				string cycle = string.Join(", ", inDegree.Where(kv => kv.Value > 0).Select(kv => kv.Key.SystemType.Name));
+				throw new Exception("Cyclic dependencies detected: " + cycle);
+			}
+
 			return batches;
 		}
 	}
