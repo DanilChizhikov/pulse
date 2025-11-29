@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
+using UnityEngine;
 
 namespace DTech.Pulse
 {
@@ -15,7 +15,7 @@ namespace DTech.Pulse
 			var node = new InitializationNode(system);
 			if (_nodes.Add(node))
 			{
-				Type[] dependencies = GetDependencies(system);
+				Type[] dependencies = system.GetDependencies();
 				node.AddDependencies(dependencies);
 			}
 			
@@ -26,88 +26,6 @@ namespace DTech.Pulse
 		{
 			List<ICollection<InitializationNode>> batches = BuildBatches();
 			return new InitializationContext(batches, _criticalSystems);
-		}
-
-		private static Type[] GetDependencies(object system)
-		{
-			var result = new HashSet<Type>();
-			MemberInfo[] members = system.GetType().GetMembers(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.FlattenHierarchy);
-			foreach (MemberInfo member in members)
-			{
-				var attribute = member.GetCustomAttribute<InitDependencyAttribute>();
-				if (attribute != null)
-				{
-					switch (member)
-					{
-						case FieldInfo fieldInfo:
-						{
-							result.Add(fieldInfo.FieldType);
-						} break;
-
-						case MethodInfo methodInfo:
-						{
-							ParameterInfo[] parameters = methodInfo.GetParameters();
-							foreach (ParameterInfo parameter in parameters)
-							{
-								result.Add(parameter.ParameterType);
-							}
-						} break;
-
-						case PropertyInfo propertyInfo:
-						{
-							result.Add(propertyInfo.PropertyType);
-						} break;
-					}
-				}
-			}
-
-			ConstructorInfo[] constructors = system.GetType().GetConstructors(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-			ConstructorInfo constructorInfo = null;
-			if (constructors.Length > 1)
-			{
-				constructorInfo = GetConstructor(constructors);
-			}
-			else if (constructors.Length == 1)
-			{
-				constructorInfo = constructors[0];
-			}
-
-			if (constructorInfo != null)
-			{
-				result.UnionWith(GetDependencies(constructorInfo));
-			}
-			
-			result.RemoveWhere(type => !typeof(IInitializable).IsAssignableFrom(type));
-			return result.ToArray();
-		}
-
-		private static Type[] GetDependencies(ConstructorInfo constructor)
-		{
-			ParameterInfo[] parameterInfos = constructor.GetParameters();
-			return parameterInfos.Select(parameterInfo => parameterInfo.ParameterType).ToArray();
-		}
-
-		private static ConstructorInfo GetConstructor(IReadOnlyList<ConstructorInfo> constructors)
-		{
-			ConstructorInfo publicConstructor = null;
-			bool hasPublicConstructor = false;
-			for (int i = 0; i < constructors.Count; i++)
-			{
-				ConstructorInfo constructorInfo = constructors[i];
-				var attribute = constructorInfo.GetCustomAttribute<InitDependencyAttribute>();
-				if (attribute != null)
-				{
-					return constructorInfo;
-				}
-
-				if (constructorInfo.IsPublic && !hasPublicConstructor)
-				{
-					publicConstructor = constructorInfo;
-					hasPublicConstructor = true;
-				}
-			}
-
-			return publicConstructor;
 		}
 		
 		private List<ICollection<InitializationNode>> BuildBatches()
@@ -126,10 +44,17 @@ namespace DTech.Pulse
 
 			foreach (var node in _nodes)
 			{
-				foreach (var depType in node.GetDependencies())
+				List<Type> dependencies = node.GetDependencies();
+				foreach (var depType in dependencies)
 				{
 					var depNode = _nodes.FirstOrDefault(n => depType.IsAssignableFrom(n.SystemType));
-					if (depNode != null)
+					if (depNode == null)
+					{
+						throw new Exception($"System '{node.SystemType.FullName}' has dependency '{depType.FullName}' " +
+							$"which was not added to '{nameof(InitializationContextBuilder)}'. " +
+							"All dependencies must be registered via AddSystem before Build is called.");
+					}
+					else
 					{
 						adjacency[depNode].Add(node);
 						inDegree[node]++;
@@ -137,7 +62,9 @@ namespace DTech.Pulse
 				}
 
 				if (node.IsCritical)
+				{
 					_criticalSystems.Add(node);
+				}
 			}
 			
 			var queue = new Queue<InitializationNode>(inDegree.Where(kv => kv.Value == 0).Select(kv => kv.Key));

@@ -42,7 +42,6 @@ namespace DTech.Pulse.Tests
         [Test]
         public void Build_ShouldRespectDependencies_FromFieldPropertyAndMethodAttributes()
         {
-            // Arrange
             var initOrder = new List<Type>();
             var builder = new InitializationContextBuilder();
 
@@ -66,13 +65,11 @@ namespace DTech.Pulse.Tests
                    .OnStartInitialize(t => initOrder.Add(t));
 
             var context = builder.Build();
-
-            // Act
+            
             context.InitializationAsync(CancellationToken.None)
                    .GetAwaiter()
                    .GetResult();
-
-            // Assert:
+            
             int simpleIndex = initOrder.IndexOf(typeof(SimpleSystem));
             Assert.That(simpleIndex, Is.GreaterThanOrEqualTo(0), "SimpleSystem must be present in the initialization order.");
 
@@ -88,15 +85,13 @@ namespace DTech.Pulse.Tests
         [Test]
         public void Build_ShouldThrow_OnCyclicDependencies()
         {
-            // Arrange
             var builder = new InitializationContextBuilder();
             var a = new CyclicSystemA();
             var b = new CyclicSystemB();
 
             builder.AddSystem(a);
             builder.AddSystem(b);
-
-            // Act & Assert
+            
             var exception = Assert.Throws<Exception>(() => builder.Build());
             StringAssert.Contains("Cyclic dependencies detected", exception!.Message);
         }
@@ -104,7 +99,6 @@ namespace DTech.Pulse.Tests
         [Test]
         public void Initialization_ShouldInvokeCriticalEvent_WhenAllCriticalSystemsInitialized()
         {
-            // Arrange
             var builder = new InitializationContextBuilder();
 
             var critical1 = new CriticalSystem();
@@ -119,13 +113,11 @@ namespace DTech.Pulse.Tests
 
             bool eventInvoked = false;
             context.OnCriticalSystemsInitialized += () => eventInvoked = true;
-
-            // Act
+            
             context.InitializationAsync(CancellationToken.None)
                    .GetAwaiter()
                    .GetResult();
-
-            // Assert
+            
             Assert.IsTrue(critical1.Initialized, "Critical System 1 must be initialized.");
             Assert.IsTrue(critical2.Initialized, "Critical System 2 must be initialized.");
             Assert.IsTrue(eventInvoked, "Event OnCriticalSystemsInitialized must be invoked after initialization all critical systems.");
@@ -134,7 +126,6 @@ namespace DTech.Pulse.Tests
         [Test]
         public void NodeHandle_Callbacks_ShouldBeInvoked_OnStartAndOnComplete()
         {
-            // Arrange
             var builder = new InitializationContextBuilder();
             var system = new SimpleSystem(null);
 
@@ -154,15 +145,48 @@ namespace DTech.Pulse.Tests
                    });
 
             var context = builder.Build();
-
-            // Act
+            
             context.InitializationAsync(CancellationToken.None)
                    .GetAwaiter()
                    .GetResult();
-
-            // Assert
+            
             Assert.IsTrue(startCalled, "Callback OnStartInitialize must be invoked.");
             Assert.IsTrue(completeCalled, "Callback OnCompleteInitialize must be invoked.");
+        }
+        
+        [Test]
+        public void CriticalSystemInitialization_Precedes_OtherSystems()
+        {
+            var builder = new InitializationContextBuilder();
+            var criticalSystem = new CriticalSystem();
+            var a = new DepA();
+            bool aInitialized = false;
+            bool criticalInitializedBeforeA = false;
+
+            builder.AddSystem(criticalSystem).SetCritical().OnStartInitialize(type =>
+            {
+                criticalInitializedBeforeA = !aInitialized;
+            });
+            
+            builder.AddSystem(a).OnStartInitialize(type => aInitialized = true);
+            InitializationContext context = builder.Build();
+
+            context.InitializationAsync(CancellationToken.None).GetAwaiter().GetResult();
+            
+            Assert.IsTrue(criticalInitializedBeforeA, "Critical system must be initialized before A.");
+        }
+        
+        [Test]
+        public void Build_ShouldThrow_WhenDependencyIsMissing()
+        {
+            var builder = new InitializationContextBuilder();
+            var criticalSystem = new CriticalSystem();
+            var dummy = new DummySystem();
+
+            builder.AddSystem(criticalSystem).SetCritical();
+            builder.AddSystem(dummy).AddDependency<DepA>();
+
+            var exception = Assert.Throws<Exception>(() => builder.Build());
         }
         
         [Test]
