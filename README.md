@@ -41,9 +41,9 @@
     ```
 3. Unity will automatically import the package.
 
-If you want to set a target version, Logging uses the `v*.*.*` release tag so you can specify a version like #v0.1.0.
+If you want to set a target version, Logging uses the `v*.*.*` release tag so you can specify a version like #v1.0.0.
 
-For example `https://github.com/DanilChizhikov/pulse.git#v0.1.0`.
+For example `https://github.com/DanilChizhikov/pulse.git#v1.0.0`.
 
 ## Features
 - **Attribute–based dependency discovery**

@@ -1,7 +1,7 @@
 {
     "name": "com.dtech.pulse",
     "displayName": "Pulse - Initialization System",
-    "version": "0.1.0",
+    "version": "1.0.0",
     "unity": "2022.3",
     "dependencies": {
         "com.unity.test-framework.performance" : "3.2.0"
