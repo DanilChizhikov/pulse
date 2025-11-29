@@ -4,6 +4,7 @@
     "version": "0.1.0",
     "unity": "2022.3",
     "dependencies": {
+        "com.unity.test-framework.performance" : "3.2.0"
     },
     "description": "Initialization system for Unity.",
     "keywords": [

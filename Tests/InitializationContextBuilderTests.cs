@@ -1,26 +1,42 @@
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using System.Threading;
 using NUnit.Framework;
 
 namespace DTech.Pulse.Tests
 {
-	[TestFixture]
+    [TestFixture]
     internal sealed class InitializationContextBuilderTests
     {
-        [Test]
-        public void AddSystem_ShouldThrow_WhenSystemTypeAlreadyAdded()
+        private Type _nodeType;
+        private ConstructorInfo _nodeCtor;
+        private MethodInfo _addDependenciesMethod;
+        private MethodInfo _removeDependenciesMethod;
+        private MethodInfo _getDependenciesMethod;
+
+        [SetUp]
+        public void Setup()
         {
-            // Arrange
-            var builder = new InitializationContextBuilder();
-            var system1 = new SimpleSystem(null);
-            var system2 = new SimpleSystem(null);
+            var assembly = typeof(InitializationContextBuilder).Assembly;
+            _nodeType = assembly.GetType("DTech.Pulse.InitializationNode", throwOnError: true);
+            _nodeCtor = _nodeType.GetConstructor(
+                BindingFlags.Instance | BindingFlags.NonPublic,
+                binder: null,
+                types: new[] { typeof(IInitializable) },
+                modifiers: null);
 
-            builder.AddSystem(system1);
+            _addDependenciesMethod = _nodeType.GetMethod("AddDependencies",
+                BindingFlags.Instance | BindingFlags.Public);
+            _removeDependenciesMethod = _nodeType.GetMethod("RemoveDependencies",
+                BindingFlags.Instance | BindingFlags.Public);
+            _getDependenciesMethod = _nodeType.GetMethod("GetDependencies",
+                BindingFlags.Instance | BindingFlags.Public);
 
-            // Act & Assert
-            var exception = Assert.Throws<Exception>(() => builder.AddSystem(system2));
-            StringAssert.Contains(typeof(SimpleSystem).FullName, exception!.Message);
+            Assert.NotNull(_nodeCtor);
+            Assert.NotNull(_addDependenciesMethod);
+            Assert.NotNull(_removeDependenciesMethod);
+            Assert.NotNull(_getDependenciesMethod);
         }
 
         [Test]
@@ -147,6 +163,61 @@ namespace DTech.Pulse.Tests
             // Assert
             Assert.IsTrue(startCalled, "Callback OnStartInitialize must be invoked.");
             Assert.IsTrue(completeCalled, "Callback OnCompleteInitialize must be invoked.");
+        }
+        
+        [Test]
+        public void RemoveDependencies_ByExactType_RemovesThatType()
+        {
+            var node = CreateNode();
+
+            _addDependenciesMethod.Invoke(node, new object[] { new[] { typeof(DepA), typeof(DepB) } });
+
+            _removeDependenciesMethod.Invoke(node, new object[] { new[] { typeof(DepA) } });
+
+            List<Type> deps = GetDependencies(node);
+
+            Assert.That(deps, !Does.Contain(typeof(DepA)));
+            Assert.That(deps, Does.Contain(typeof(DepB)));
+        }
+
+        [Test]
+        public void RemoveDependencies_ByBaseType_RemovesAllDerivedDependencies()
+        {
+            var node = CreateNode();
+
+            _addDependenciesMethod.Invoke(node, new object[] { new[] { typeof(DepA), typeof(DepB) } });
+            
+            _removeDependenciesMethod.Invoke(node, new object[] { new[] { typeof(IBaseDep) } });
+
+            List<Type> deps = GetDependencies(node);
+
+            Assert.That(deps, Is.Empty);
+        }
+
+        [Test]
+        public void RemoveDependencies_CanBeCalledMultipleTimes()
+        {
+            var node = CreateNode();
+
+            _addDependenciesMethod.Invoke(node, new object[] { new[] { typeof(DepA), typeof(DepB) } });
+
+            _removeDependenciesMethod.Invoke(node, new object[] { new[] { typeof(DepA) } });
+            _removeDependenciesMethod.Invoke(node, new object[] { new[] { typeof(DepB) } });
+
+            List<Type> deps = GetDependencies(node);
+
+            Assert.That(deps, Is.Empty);
+        }
+        
+        private object CreateNode()
+        {
+            var dummy = new DummySystem();
+            return _nodeCtor.Invoke(new object[] { dummy });
+        }
+        
+        private List<Type> GetDependencies(object node)
+        {
+            return (List<Type>)_getDependenciesMethod.Invoke(node, Array.Empty<object>());
         }
     }
 }

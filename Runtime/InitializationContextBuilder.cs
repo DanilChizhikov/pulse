@@ -13,11 +13,6 @@ namespace DTech.Pulse
 		public IInitializationNodeHandle AddSystem(IInitializable system)
 		{
 			var node = new InitializationNode(system);
-			if (_nodes.Any(cachedNode => cachedNode.SystemType == node.SystemType))
-			{
-				throw new Exception($"System {node.SystemType.FullName} has already been added");
-			}
-
 			if (_nodes.Add(node))
 			{
 				Type[] dependencies = GetDependencies(system);
