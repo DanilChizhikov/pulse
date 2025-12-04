@@ -27,7 +27,7 @@ jobs:
 
       - name: Clone empty Unity project
         run: |
-          git clone https://github.com/DanilChizhikov/empty-unity-project.git
+          git clone https://DanilChizhikov:${{ secrets.PRIVATE_REPO_TOKEN }}@github.com/DanilChizhikov/empty-unity-project.git empty-unity-project
 
       - name: Copy pulse source into Unity project
         run: |
