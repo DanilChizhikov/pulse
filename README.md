@@ -1,6 +1,6 @@
 # Pulse
 [![Unity Version](https://img.shields.io/badge/unity-2022.3+-000.svg)](https://unity3d.com/get-unity/download/archive)
-![Tests](https://img.shields.io/badge/Tests-Passed-brightgreen.svg)
+![Unity Tests](https://github.com/DanilChizhikov/pulse/actions/workflows/tests.yml/badge.svg?branch=master)
 
 ## Table of Contents
 - [Getting Started](#getting-started)
