@@ -16,9 +16,11 @@ namespace DTech.Pulse
 
 		private readonly List<ICollection<InitializationNode>> _batches;
 		private readonly HashSet<InitializationNode> _criticalSystems;
+		private readonly object _criticalSystemsLock = new();
 		private readonly List<InitializationNode> _nodes;
 
 		private bool _isInitializationStarted;
+		private bool _isCriticalSystemsInitializedEventInvoked;
 
 		internal InitializationContext(
 			List<ICollection<InitializationNode>> batches,
@@ -67,13 +69,23 @@ namespace DTech.Pulse
 				return;
 			}
 
-			if(!_criticalSystems.Remove(node))
+			bool shouldInvokeEvent = false;
+			lock (_criticalSystemsLock)
 			{
-				throw new InvalidOperationException("This critical dependence was not taken into account." +
-					"Critical dependencies must be added before initialization begins.");
+				if (!_criticalSystems.Remove(node))
+				{
+					throw new InvalidOperationException("This critical dependence was not taken into account." +
+						"Critical dependencies must be added before initialization begins.");
+				}
+
+				if (_criticalSystems.Count == 0 && !_isCriticalSystemsInitializedEventInvoked)
+				{
+					_isCriticalSystemsInitializedEventInvoked = true;
+					shouldInvokeEvent = true;
+				}
 			}
 
-			if (_criticalSystems.Count != 0)
+			if (!shouldInvokeEvent)
 			{
 				return;
 			}
