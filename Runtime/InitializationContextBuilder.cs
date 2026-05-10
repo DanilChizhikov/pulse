@@ -1,37 +1,68 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using UnityEngine.Scripting;
 
 namespace DTech.Pulse
 {
+	[Preserve]
 	public sealed class InitializationContextBuilder
 	{
-		private readonly HashSet<InitializationNode> _nodes = new();
-		private readonly HashSet<InitializationNode> _criticalSystems = new();
-		
+		private readonly List<InitializationNode> _nodes = new();
+		private readonly Dictionary<Type, InitializationNode> _nodesByType = new();
+
+		private bool _isBuilt;
+
 		public IInitializationNodeHandle AddSystem(IInitializable system)
 		{
-			var node = new InitializationNode(system);
-			if (_nodes.Add(node))
+			if (_isBuilt)
 			{
-				Type[] dependencies = system.GetDependencies();
-				node.AddDependencies(dependencies);
+				throw new InvalidOperationException("This builder has already built an initialization context.");
 			}
-			
+
+			if (system == null)
+			{
+				throw new ArgumentNullException(nameof(system));
+			}
+
+			Type systemType = system.GetType();
+			if (_nodesByType.ContainsKey(systemType))
+			{
+				throw new InvalidOperationException($"System '{systemType.FullName}' is already registered.");
+			}
+
+			var node = new InitializationNode(system);
+			Type[] dependencies = system.GetDependencies();
+			node.AddDependencies(dependencies);
+
+			_nodes.Add(node);
+			_nodesByType.Add(systemType, node);
+
 			return node;
 		}
-		
+
 		public InitializationContext Build()
 		{
-			List<ICollection<InitializationNode>> batches = BuildBatches();
-			return new InitializationContext(batches, _criticalSystems, _nodes);
+			if (_isBuilt)
+			{
+				throw new InvalidOperationException("This builder has already built an initialization context.");
+			}
+
+			List<ICollection<InitializationNode>> batches = BuildBatches(out HashSet<InitializationNode> criticalSystems);
+			for (int i = 0; i < _nodes.Count; i++)
+			{
+				_nodes[i].SetProcessed();
+			}
+
+			_isBuilt = true;
+			return new InitializationContext(batches, criticalSystems, _nodes);
 		}
-		
-		private List<ICollection<InitializationNode>> BuildBatches()
+
+		private List<ICollection<InitializationNode>> BuildBatches(out HashSet<InitializationNode> criticalSystems)
 		{
 			var batches = new List<ICollection<InitializationNode>>();
-			_criticalSystems.Clear();
-			
+			criticalSystems = new HashSet<InitializationNode>();
+
 			var inDegree = new Dictionary<InitializationNode, int>();
 			var adjacency = new Dictionary<InitializationNode, List<InitializationNode>>();
 
@@ -46,26 +77,17 @@ namespace DTech.Pulse
 				List<Type> dependencies = node.GetDependencies();
 				foreach (var depType in dependencies)
 				{
-					var depNode = _nodes.FirstOrDefault(n => depType.IsAssignableFrom(n.SystemType));
-					if (depNode == null)
-					{
-						throw new Exception($"System '{node.SystemType.FullName}' has dependency '{depType.FullName}' " +
-							$"which was not added to '{nameof(InitializationContextBuilder)}'. " +
-							"All dependencies must be registered via AddSystem before Build is called.");
-					}
-					else
-					{
-						adjacency[depNode].Add(node);
-						inDegree[node]++;
-					}
+					InitializationNode depNode = ResolveDependencyNode(node, depType);
+					adjacency[depNode].Add(node);
+					inDegree[node]++;
 				}
 
 				if (node.IsCritical)
 				{
-					_criticalSystems.Add(node);
+					criticalSystems.Add(node);
 				}
 			}
-			
+
 			var queue = new Queue<InitializationNode>(inDegree.Where(kv => kv.Value == 0).Select(kv => kv.Key));
 
 			while (queue.Count > 0)
@@ -90,14 +112,43 @@ namespace DTech.Pulse
 
 				batches.Add(batch);
 			}
-			
+
 			if (inDegree.Any(kv => kv.Value > 0))
 			{
 				string cycle = string.Join(", ", inDegree.Where(kv => kv.Value > 0).Select(kv => kv.Key.SystemType.Name));
-				throw new Exception("Cyclic dependencies detected: " + cycle);
+				throw new InvalidOperationException("Cyclic dependencies detected: " + cycle);
 			}
 
 			return batches;
+		}
+
+		private InitializationNode ResolveDependencyNode(InitializationNode node, Type dependencyType)
+		{
+			if (_nodesByType.TryGetValue(dependencyType, out InitializationNode exactNode))
+			{
+				return exactNode;
+			}
+
+			List<InitializationNode> candidates = _nodes
+				.Where(candidate => dependencyType.IsAssignableFrom(candidate.SystemType))
+				.ToList();
+			if (candidates.Count == 1)
+			{
+				return candidates[0];
+			}
+
+			if (candidates.Count > 1)
+			{
+				string candidateNames = string.Join(", ", candidates.Select(candidate => candidate.SystemType.FullName));
+				throw new InvalidOperationException(
+					$"System '{node.SystemType.FullName}' has dependency '{dependencyType.FullName}', " +
+					$"but it matches multiple registered systems: {candidateNames}. " +
+					"Register a concrete dependency type or remove the ambiguity.");
+			}
+
+			throw new InvalidOperationException($"System '{node.SystemType.FullName}' has dependency '{dependencyType.FullName}' " +
+				$"which was not added to '{nameof(InitializationContextBuilder)}'. " +
+				"All dependencies must be registered via AddSystem before Build is called.");
 		}
 	}
 }
