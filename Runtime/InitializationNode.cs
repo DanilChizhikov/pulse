@@ -148,13 +148,24 @@ namespace DTech.Pulse
 			return result;
 		}
 
-		internal async Task InitializeAsync(CancellationToken cancellationToken)
+		internal async Task InitializeAsync(
+			CancellationToken cancellationToken,
+			Action<Type> onInitializeStarted,
+			Action<Type> onInitializeCompleted)
 		{
-			OnInitializeStarted?.Invoke(SystemType);
-			await _system.InitializeAsync(cancellationToken);
-			OnInitializeCompleted?.Invoke(SystemType);
-			OnInitializeStarted = null;
-			OnInitializeCompleted = null;
+			try
+			{
+				OnInitializeStarted?.Invoke(SystemType);
+				onInitializeStarted?.Invoke(SystemType);
+				await _system.InitializeAsync(cancellationToken);
+				OnInitializeCompleted?.Invoke(SystemType);
+				onInitializeCompleted?.Invoke(SystemType);
+			}
+			finally
+			{
+				OnInitializeStarted = null;
+				OnInitializeCompleted = null;
+			}
 		}
 
 		internal void SetProcessed() => _isProcessed = true;

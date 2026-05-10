@@ -37,16 +37,9 @@ namespace DTech.Pulse
 
 			_isInitializationStarted = true;
 
-			for (int i = 0; i < _nodes.Count; i++)
-			{
-				InitializationNode node = _nodes[i];
-				node.OnStartInitialize(SystemBeginInitializationCallback);
-				node.OnCompleteInitialize(SystemInitializationCompleteCallback);
-			}
-
 			foreach (ICollection<InitializationNode> batch in _batches)
 			{
-				IEnumerable<Task> tasks = batch.Select(node => node.InitializeAsync(token));
+				IEnumerable<Task> tasks = batch.Select(node => InitializeNodeAsync(node, token));
 
 				await Task.WhenAll(tasks);
 				if (token.IsCancellationRequested)
@@ -74,7 +67,7 @@ namespace DTech.Pulse
 
 			if(!_criticalSystems.Remove(node))
 			{
-				throw new Exception("This critical dependence was not taken into account." +
+				throw new InvalidOperationException("This critical dependence was not taken into account." +
 					"Critical dependencies must be added before initialization begins.");
 			}
 
@@ -84,6 +77,12 @@ namespace DTech.Pulse
 			}
 
 			OnCriticalSystemsInitialized?.Invoke();
+		}
+
+		private async Task InitializeNodeAsync(InitializationNode node, CancellationToken token)
+		{
+			await node.InitializeAsync(token, SystemBeginInitializationCallback, SystemInitializationCompleteCallback);
+			RemoveCriticalSystem(node);
 		}
 
 		private void SystemBeginInitializationCallback(Type systemType)
