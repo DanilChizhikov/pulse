@@ -8,6 +8,7 @@
     - [Manual Installation](#manual-installation)
     - [UPM Installation](#upm-installation)
 - [Features](#features)
+- [Runtime compatibility](#runtime-compatibility)
 - [Usage](#usage)
   - [Define your systems](#define-your-systems)
   - [Declare dependencies via attributes](#declare-dependencies-via-attributes)
@@ -41,9 +42,9 @@
     ```
 3. Unity will automatically import the package.
 
-If you want to set a target version, Logging uses the `v*.*.*` release tag so you can specify a version like #v1.0.0.
+If you want to set a target version, Pulse uses the `v*.*.*` release tag so you can specify a version like #v1.1.0.
 
-For example `https://github.com/DanilChizhikov/pulse.git#v1.0.0`.
+For example `https://github.com/DanilChizhikov/pulse.git#v1.1.0`.
 
 ## Features
 - **Attribute–based dependency discovery**
@@ -102,6 +103,16 @@ For example `https://github.com/DanilChizhikov/pulse.git#v1.0.0`.
   If the token is canceled:
   - Pulse stops processing further batches;
   - any already running tasks can respect the token and exit early.
+
+## Runtime compatibility
+
+Pulse intentionally uses `System.Threading.Tasks.Task` in its public API. This keeps the package free from an async
+runtime dependency and lets consumers adapt Pulse from UniTask, coroutines, or plain .NET async code.
+
+Pulse preserves its own runtime assembly metadata for IL2CPP builds. If your systems declare dependencies through
+private fields, private properties, private methods, or constructors, Unity managed stripping can still remove metadata
+from your consumer code. For high stripping levels, add `[UnityEngine.Scripting.Preserve]` to those consumer types or
+members, or register dependencies manually with `AddDependency` / `AddDependencies`.
 
 ## Usage
 
@@ -174,12 +185,12 @@ You can also place `InitDependency` on:
       private readonly DatabaseSystem _database;
   
       [InitDependency]
-      pulic AnalyticsSystem(DatabaseSystem database)
+      public AnalyticsSystem(DatabaseSystem database)
       {
           _database = database;
       }
       
-      pulic AnalyticsSystem(DatabaseSystem database, AuthSystem auth)
+      public AnalyticsSystem(DatabaseSystem database, AuthSystem auth)
       {
           _database = database;
       }
@@ -296,7 +307,7 @@ Marks a member that declares dependencies of the system:
 - **Constructors**: all parameter types are treated as dependencies.
 If multiple constructors exist:
   - The one with InitDependencyAttribute is preferred;
-  - Otherwise, the first public constructor is used.
+  - Otherwise, Build fails and asks you to mark one constructor explicitly.
 
 Only types that implement IInitializable are kept as dependencies.
 
@@ -328,7 +339,7 @@ Responsible for registering systems and building the initialization plan.
 #### `AddSystem(IInitializable system)`
 Registers a system for initialization and returns an `IInitializationNodeHandle` to configure it.
 - Automatically discovers dependencies using `InitDependencyAttribute` and constructors.
-- Throws if a system with the same runtime type has already been added (depending on your current version; if not present you can easily add this check).
+- Throws if a system with the same runtime type has already been added.
 
 **Example:**
 ```csharp
@@ -476,8 +487,6 @@ builder.AddSystem(db)
        .OnStartInitialize(type => Debug.Log($"Start: {type.Name}"))
        .OnCompleteInitialize(type => Debug.Log($"Done: {type.Name}"));
 ```
-
-If you want, I can also add a small “Quick Start” snippet above these sections showing a full minimal example from builder setup to initialization call.
 
 ## Dependencies
 - [Performance Testing Package for Unity v3.2.0](https://docs.unity3d.com/Packages/com.unity.test-framework.performance@3.2/manual/index.html)

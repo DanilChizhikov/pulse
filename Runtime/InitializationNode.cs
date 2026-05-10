@@ -2,22 +2,24 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using UnityEngine.Scripting;
 
 namespace DTech.Pulse
 {
+	[Preserve]
 	internal sealed class InitializationNode : IInitializationNodeHandle
 	{
 		private event Action<Type> OnInitializeStarted;
 		private event Action<Type> OnInitializeCompleted;
-		
+
 		private readonly IInitializable _system;
 		private readonly HashSet<Type> _dependencies;
 		private readonly HashSet<Type> _removedDependencies;
-		
+
 		public Type SystemType { get; }
 
 		public bool IsCritical { get; private set; }
-		
+
 		private bool _isProcessed;
 
 		internal InitializationNode(IInitializable system)
@@ -28,7 +30,7 @@ namespace DTech.Pulse
 			_dependencies = new HashSet<Type>();
 			_removedDependencies = new HashSet<Type>();
 		}
-		
+
 		public IInitializationNodeHandle AddDependency<T>()
 			where T : IInitializable
 		{
@@ -39,19 +41,31 @@ namespace DTech.Pulse
 		{
 			if (_isProcessed)
 			{
-				throw new Exception("This node has already been validated. You must add dependencies before initialization begins.");
+				throw new InvalidOperationException(
+					"This node has already been validated. You must add dependencies before initialization begins.");
 			}
-			
+
+			if (dependencies == null)
+			{
+				throw new ArgumentNullException(nameof(dependencies));
+			}
+
 			foreach (Type dependency in dependencies)
 			{
+				if (dependency == null)
+				{
+					throw new ArgumentException("Dependency type cannot be null.", nameof(dependencies));
+				}
+
 				if (!typeof(IInitializable).IsAssignableFrom(dependency))
 				{
-					throw new Exception($"Dependency {dependency} is not an instance of {typeof(IInitializable)}");
+					throw new InvalidOperationException(
+						$"Dependency {dependency} is not an instance of {typeof(IInitializable)}");
 				}
-				
+
 				_dependencies.Add(dependency);
 			}
-			
+
 			return this;
 		}
 
@@ -65,14 +79,25 @@ namespace DTech.Pulse
 		{
 			if (_isProcessed)
 			{
-				throw new Exception("This node has already been validated. You must remove dependencies before initialization begins.");
+				throw new InvalidOperationException(
+					"This node has already been validated. You must remove dependencies before initialization begins.");
 			}
-			
+
+			if (dependencies == null)
+			{
+				throw new ArgumentNullException(nameof(dependencies));
+			}
+
 			foreach (Type dependency in dependencies)
 			{
+				if (dependency == null)
+				{
+					throw new ArgumentException("Dependency type cannot be null.", nameof(dependencies));
+				}
+
 				_removedDependencies.Add(dependency);
 			}
-			
+
 			return this;
 		}
 
@@ -80,9 +105,10 @@ namespace DTech.Pulse
 		{
 			if (_isProcessed)
 			{
-				throw new Exception("This node has already been validated. You must set criticality before initialization begins.");
+				throw new InvalidOperationException(
+					"This node has already been validated. You must set criticality before initialization begins.");
 			}
-			
+
 			IsCritical = true;
 			return this;
 		}
@@ -103,9 +129,10 @@ namespace DTech.Pulse
 		{
 			if (_isProcessed)
 			{
-				throw new Exception("This node has already been validated. You cannot retrieve dependencies after initialization begins.");
+				throw new InvalidOperationException(
+					"This node has already been validated. You cannot retrieve dependencies after initialization begins.");
 			}
-			
+
 			var result = new List<Type>(_dependencies);
 			var dependenciesToRemove = new HashSet<Type>();
 			foreach (Type removableDependency in _removedDependencies)
@@ -118,20 +145,31 @@ namespace DTech.Pulse
 					}
 				}
 			}
-			
+
 			result.RemoveAll(dependenciesToRemove.Contains);
 			return result;
 		}
 
-		internal async Task InitializeAsync(CancellationToken cancellationToken)
+		internal async Task InitializeAsync(
+			CancellationToken cancellationToken,
+			Action<Type> onInitializeStarted,
+			Action<Type> onInitializeCompleted)
 		{
-			OnInitializeStarted?.Invoke(SystemType);
-			await _system.InitializeAsync(cancellationToken);
-			OnInitializeCompleted?.Invoke(SystemType);
-			OnInitializeStarted = null;
-			OnInitializeCompleted = null;
+			try
+			{
+				OnInitializeStarted?.Invoke(SystemType);
+				onInitializeStarted?.Invoke(SystemType);
+				await _system.InitializeAsync(cancellationToken);
+				OnInitializeCompleted?.Invoke(SystemType);
+				onInitializeCompleted?.Invoke(SystemType);
+			}
+			finally
+			{
+				OnInitializeStarted = null;
+				OnInitializeCompleted = null;
+			}
 		}
-		
+
 		internal void SetProcessed() => _isProcessed = true;
 	}
 }
