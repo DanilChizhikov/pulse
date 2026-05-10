@@ -3,9 +3,11 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using UnityEngine.Scripting;
 
 namespace DTech.Pulse
 {
+	[Preserve]
 	public sealed class InitializationContext
 	{
 		public event Action<Type> OnSystemInitializationBegan;

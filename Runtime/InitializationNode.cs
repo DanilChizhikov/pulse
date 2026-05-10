@@ -2,9 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using UnityEngine.Scripting;
 
 namespace DTech.Pulse
 {
+	[Preserve]
 	internal sealed class InitializationNode : IInitializationNodeHandle
 	{
 		private event Action<Type> OnInitializeStarted;

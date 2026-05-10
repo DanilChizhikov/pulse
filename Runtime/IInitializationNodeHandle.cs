@@ -1,7 +1,9 @@
 using System;
+using UnityEngine.Scripting;
 
 namespace DTech.Pulse
 {
+	[Preserve]
 	public interface IInitializationNodeHandle
 	{
 		Type SystemType { get; }

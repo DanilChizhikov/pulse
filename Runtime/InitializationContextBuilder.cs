@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using UnityEngine.Scripting;
 
 namespace DTech.Pulse
 {
+	[Preserve]
 	public sealed class InitializationContextBuilder
 	{
 		private readonly List<InitializationNode> _nodes = new();
