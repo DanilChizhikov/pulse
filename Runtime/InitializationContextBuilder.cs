@@ -75,18 +75,9 @@ namespace DTech.Pulse
 				List<Type> dependencies = node.GetDependencies();
 				foreach (var depType in dependencies)
 				{
-					var depNode = _nodes.FirstOrDefault(n => depType.IsAssignableFrom(n.SystemType));
-					if (depNode == null)
-					{
-						throw new Exception($"System '{node.SystemType.FullName}' has dependency '{depType.FullName}' " +
-							$"which was not added to '{nameof(InitializationContextBuilder)}'. " +
-							"All dependencies must be registered via AddSystem before Build is called.");
-					}
-					else
-					{
-						adjacency[depNode].Add(node);
-						inDegree[node]++;
-					}
+					InitializationNode depNode = ResolveDependencyNode(node, depType);
+					adjacency[depNode].Add(node);
+					inDegree[node]++;
 				}
 
 				if (node.IsCritical)
@@ -123,10 +114,39 @@ namespace DTech.Pulse
 			if (inDegree.Any(kv => kv.Value > 0))
 			{
 				string cycle = string.Join(", ", inDegree.Where(kv => kv.Value > 0).Select(kv => kv.Key.SystemType.Name));
-				throw new Exception("Cyclic dependencies detected: " + cycle);
+				throw new InvalidOperationException("Cyclic dependencies detected: " + cycle);
 			}
 
 			return batches;
+		}
+
+		private InitializationNode ResolveDependencyNode(InitializationNode node, Type dependencyType)
+		{
+			if (_nodesByType.TryGetValue(dependencyType, out InitializationNode exactNode))
+			{
+				return exactNode;
+			}
+
+			List<InitializationNode> candidates = _nodes
+				.Where(candidate => dependencyType.IsAssignableFrom(candidate.SystemType))
+				.ToList();
+			if (candidates.Count == 1)
+			{
+				return candidates[0];
+			}
+
+			if (candidates.Count > 1)
+			{
+				string candidateNames = string.Join(", ", candidates.Select(candidate => candidate.SystemType.FullName));
+				throw new InvalidOperationException(
+					$"System '{node.SystemType.FullName}' has dependency '{dependencyType.FullName}', " +
+					$"but it matches multiple registered systems: {candidateNames}. " +
+					"Register a concrete dependency type or remove the ambiguity.");
+			}
+
+			throw new InvalidOperationException($"System '{node.SystemType.FullName}' has dependency '{dependencyType.FullName}' " +
+				$"which was not added to '{nameof(InitializationContextBuilder)}'. " +
+				"All dependencies must be registered via AddSystem before Build is called.");
 		}
 	}
 }

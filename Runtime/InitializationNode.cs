@@ -43,8 +43,18 @@ namespace DTech.Pulse
 					"This node has already been validated. You must add dependencies before initialization begins.");
 			}
 
+			if (dependencies == null)
+			{
+				throw new ArgumentNullException(nameof(dependencies));
+			}
+
 			foreach (Type dependency in dependencies)
 			{
+				if (dependency == null)
+				{
+					throw new ArgumentException("Dependency type cannot be null.", nameof(dependencies));
+				}
+
 				if (!typeof(IInitializable).IsAssignableFrom(dependency))
 				{
 					throw new InvalidOperationException(
@@ -71,8 +81,18 @@ namespace DTech.Pulse
 					"This node has already been validated. You must remove dependencies before initialization begins.");
 			}
 
+			if (dependencies == null)
+			{
+				throw new ArgumentNullException(nameof(dependencies));
+			}
+
 			foreach (Type dependency in dependencies)
 			{
+				if (dependency == null)
+				{
+					throw new ArgumentException("Dependency type cannot be null.", nameof(dependencies));
+				}
+
 				_removedDependencies.Add(dependency);
 			}
 

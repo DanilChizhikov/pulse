@@ -9,8 +9,14 @@ namespace DTech.Pulse
 	{
 		public static Type[] GetDependencies(this object system)
 		{
+			if (system == null)
+			{
+				throw new ArgumentNullException(nameof(system));
+			}
+
 			var result = new HashSet<Type>();
-			MemberInfo[] members = system.GetType().GetMembers(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.FlattenHierarchy);
+			Type systemType = system.GetType();
+			MemberInfo[] members = systemType.GetMembers(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.FlattenHierarchy);
 			foreach (MemberInfo member in members)
 			{
 				var attribute = member.GetCustomAttribute<InitDependencyAttribute>();
@@ -40,11 +46,11 @@ namespace DTech.Pulse
 				}
 			}
 
-			ConstructorInfo[] constructors = system.GetType().GetConstructors(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+			ConstructorInfo[] constructors = systemType.GetConstructors(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
 			ConstructorInfo constructorInfo = null;
 			if (constructors.Length > 1)
 			{
-				constructorInfo = GetConstructor(constructors);
+				constructorInfo = GetConstructor(systemType, constructors);
 			}
 			else if (constructors.Length == 1)
 			{
@@ -55,38 +61,44 @@ namespace DTech.Pulse
 			{
 				result.UnionWith(GetDependencies(constructorInfo));
 			}
-			
+
 			result.RemoveWhere(type => !typeof(IInitializable).IsAssignableFrom(type));
 			return result.ToArray();
 		}
-		
+
 		private static Type[] GetDependencies(ConstructorInfo constructor)
 		{
 			ParameterInfo[] parameterInfos = constructor.GetParameters();
 			return parameterInfos.Select(parameterInfo => parameterInfo.ParameterType).ToArray();
 		}
-		
-		private static ConstructorInfo GetConstructor(IReadOnlyList<ConstructorInfo> constructors)
+
+		private static ConstructorInfo GetConstructor(Type systemType, IReadOnlyList<ConstructorInfo> constructors)
 		{
-			ConstructorInfo publicConstructor = null;
-			bool hasPublicConstructor = false;
+			var markedConstructors = new List<ConstructorInfo>();
 			for (int i = 0; i < constructors.Count; i++)
 			{
 				ConstructorInfo constructorInfo = constructors[i];
 				var attribute = constructorInfo.GetCustomAttribute<InitDependencyAttribute>();
 				if (attribute != null)
 				{
-					return constructorInfo;
-				}
-
-				if (constructorInfo.IsPublic && !hasPublicConstructor)
-				{
-					publicConstructor = constructorInfo;
-					hasPublicConstructor = true;
+					markedConstructors.Add(constructorInfo);
 				}
 			}
 
-			return publicConstructor;
+			if (markedConstructors.Count == 1)
+			{
+				return markedConstructors[0];
+			}
+
+			if (markedConstructors.Count > 1)
+			{
+				throw new InvalidOperationException(
+					$"System '{systemType.FullName}' has multiple constructors marked with '{nameof(InitDependencyAttribute)}'.");
+			}
+
+			throw new InvalidOperationException(
+				$"System '{systemType.FullName}' has multiple constructors. " +
+				$"Mark one constructor with '{nameof(InitDependencyAttribute)}'.");
 		}
 	}
 }
