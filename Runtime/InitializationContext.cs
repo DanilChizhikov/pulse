@@ -11,11 +11,13 @@ namespace DTech.Pulse
 		public event Action<Type> OnSystemInitializationBegan;
 		public event Action<Type> OnSystemInitializationCompleted;
 		public event Action OnCriticalSystemsInitialized;
-		
+
 		private readonly List<ICollection<InitializationNode>> _batches;
 		private readonly HashSet<InitializationNode> _criticalSystems;
 		private readonly List<InitializationNode> _nodes;
-		
+
+		private bool _isInitializationStarted;
+
 		internal InitializationContext(
 			List<ICollection<InitializationNode>> batches,
 			IEnumerable<InitializationNode> criticalSystems,
@@ -28,6 +30,13 @@ namespace DTech.Pulse
 
 		public async Task InitializationAsync(CancellationToken token)
 		{
+			if (_isInitializationStarted)
+			{
+				throw new InvalidOperationException("This initialization context can only be run once.");
+			}
+
+			_isInitializationStarted = true;
+
 			for (int i = 0; i < _nodes.Count; i++)
 			{
 				InitializationNode node = _nodes[i];
@@ -38,7 +47,7 @@ namespace DTech.Pulse
 			foreach (ICollection<InitializationNode> batch in _batches)
 			{
 				IEnumerable<Task> tasks = batch.Select(node => node.InitializeAsync(token));
-				
+
 				await Task.WhenAll(tasks);
 				if (token.IsCancellationRequested)
 				{
@@ -50,7 +59,7 @@ namespace DTech.Pulse
 					RemoveCriticalSystem(node);
 				}
 			}
-			
+
 			_nodes.Clear();
 			_batches.Clear();
 			_criticalSystems.Clear();
@@ -68,20 +77,20 @@ namespace DTech.Pulse
 				throw new Exception("This critical dependence was not taken into account." +
 					"Critical dependencies must be added before initialization begins.");
 			}
-                
+
 			if (_criticalSystems.Count != 0)
 			{
 				return;
 			}
-			
+
 			OnCriticalSystemsInitialized?.Invoke();
 		}
-		
+
 		private void SystemBeginInitializationCallback(Type systemType)
 		{
 			OnSystemInitializationBegan?.Invoke(systemType);
 		}
-		
+
 		private void SystemInitializationCompleteCallback(Type systemType)
 		{
 			OnSystemInitializationCompleted?.Invoke(systemType);

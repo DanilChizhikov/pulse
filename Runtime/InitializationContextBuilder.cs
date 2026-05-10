@@ -6,32 +6,61 @@ namespace DTech.Pulse
 {
 	public sealed class InitializationContextBuilder
 	{
-		private readonly HashSet<InitializationNode> _nodes = new();
-		private readonly HashSet<InitializationNode> _criticalSystems = new();
-		
+		private readonly List<InitializationNode> _nodes = new();
+		private readonly Dictionary<Type, InitializationNode> _nodesByType = new();
+
+		private bool _isBuilt;
+
 		public IInitializationNodeHandle AddSystem(IInitializable system)
 		{
-			var node = new InitializationNode(system);
-			if (_nodes.Add(node))
+			if (_isBuilt)
 			{
-				Type[] dependencies = system.GetDependencies();
-				node.AddDependencies(dependencies);
+				throw new InvalidOperationException("This builder has already built an initialization context.");
 			}
-			
+
+			if (system == null)
+			{
+				throw new ArgumentNullException(nameof(system));
+			}
+
+			Type systemType = system.GetType();
+			if (_nodesByType.ContainsKey(systemType))
+			{
+				throw new InvalidOperationException($"System '{systemType.FullName}' is already registered.");
+			}
+
+			var node = new InitializationNode(system);
+			Type[] dependencies = system.GetDependencies();
+			node.AddDependencies(dependencies);
+
+			_nodes.Add(node);
+			_nodesByType.Add(systemType, node);
+
 			return node;
 		}
-		
+
 		public InitializationContext Build()
 		{
-			List<ICollection<InitializationNode>> batches = BuildBatches();
-			return new InitializationContext(batches, _criticalSystems, _nodes);
+			if (_isBuilt)
+			{
+				throw new InvalidOperationException("This builder has already built an initialization context.");
+			}
+
+			List<ICollection<InitializationNode>> batches = BuildBatches(out HashSet<InitializationNode> criticalSystems);
+			for (int i = 0; i < _nodes.Count; i++)
+			{
+				_nodes[i].SetProcessed();
+			}
+
+			_isBuilt = true;
+			return new InitializationContext(batches, criticalSystems, _nodes);
 		}
-		
-		private List<ICollection<InitializationNode>> BuildBatches()
+
+		private List<ICollection<InitializationNode>> BuildBatches(out HashSet<InitializationNode> criticalSystems)
 		{
 			var batches = new List<ICollection<InitializationNode>>();
-			_criticalSystems.Clear();
-			
+			criticalSystems = new HashSet<InitializationNode>();
+
 			var inDegree = new Dictionary<InitializationNode, int>();
 			var adjacency = new Dictionary<InitializationNode, List<InitializationNode>>();
 
@@ -62,10 +91,10 @@ namespace DTech.Pulse
 
 				if (node.IsCritical)
 				{
-					_criticalSystems.Add(node);
+					criticalSystems.Add(node);
 				}
 			}
-			
+
 			var queue = new Queue<InitializationNode>(inDegree.Where(kv => kv.Value == 0).Select(kv => kv.Key));
 
 			while (queue.Count > 0)
@@ -90,7 +119,7 @@ namespace DTech.Pulse
 
 				batches.Add(batch);
 			}
-			
+
 			if (inDegree.Any(kv => kv.Value > 0))
 			{
 				string cycle = string.Join(", ", inDegree.Where(kv => kv.Value > 0).Select(kv => kv.Key.SystemType.Name));
