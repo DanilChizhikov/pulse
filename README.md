@@ -42,9 +42,9 @@
     ```
 3. Unity will automatically import the package.
 
-If you want to set a target version, Logging uses the `v*.*.*` release tag so you can specify a version like #v1.0.0.
+If you want to set a target version, Pulse uses the `v*.*.*` release tag so you can specify a version like #v1.1.0.
 
-For example `https://github.com/DanilChizhikov/pulse.git#v1.0.0`.
+For example `https://github.com/DanilChizhikov/pulse.git#v1.1.0`.
 
 ## Features
 - **Attribute–based dependency discovery**
@@ -185,12 +185,12 @@ You can also place `InitDependency` on:
       private readonly DatabaseSystem _database;
   
       [InitDependency]
-      pulic AnalyticsSystem(DatabaseSystem database)
+      public AnalyticsSystem(DatabaseSystem database)
       {
           _database = database;
       }
       
-      pulic AnalyticsSystem(DatabaseSystem database, AuthSystem auth)
+      public AnalyticsSystem(DatabaseSystem database, AuthSystem auth)
       {
           _database = database;
       }
@@ -487,8 +487,6 @@ builder.AddSystem(db)
        .OnStartInitialize(type => Debug.Log($"Start: {type.Name}"))
        .OnCompleteInitialize(type => Debug.Log($"Done: {type.Name}"));
 ```
-
-If you want, I can also add a small “Quick Start” snippet above these sections showing a full minimal example from builder setup to initialization call.
 
 ## Dependencies
 - [Performance Testing Package for Unity v3.2.0](https://docs.unity3d.com/Packages/com.unity.test-framework.performance@3.2/manual/index.html)
