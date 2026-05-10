@@ -51,10 +51,6 @@ namespace DTech.Pulse
 					return;
 				}
 
-				foreach (InitializationNode node in batch)
-				{
-					RemoveCriticalSystem(node);
-				}
 			}
 
 			_nodes.Clear();
