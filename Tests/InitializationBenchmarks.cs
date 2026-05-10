@@ -8,22 +8,16 @@ namespace DTech.Pulse.Tests
 	[TestFixture]
 	internal sealed class InitializationBenchmarks
 	{
-		private sealed class BenchmarkSystem : IInitializable
-		{
-			public Task InitializeAsync(CancellationToken token) => Task.CompletedTask;
-		}
-
 		[Test, Performance]
-		public void Build_1000_SimpleSystems()
+		public void Build_10_UniqueSystems()
 		{
-			const int Count = 1000;
-
 			Measure.Method(() =>
 				{
 					var builder = new InitializationContextBuilder();
-					for (int i = 0; i < Count; i++)
+					IInitializable[] systems = CreateSystems();
+					for (int i = 0; i < systems.Length; i++)
 					{
-						builder.AddSystem(new BenchmarkSystem());
+						builder.AddSystem(systems[i]);
 					}
 
 					builder.Build();
@@ -35,20 +29,11 @@ namespace DTech.Pulse.Tests
 		}
 
 		[Test, Performance]
-		public void Initialize_1000_SimpleSystems()
+		public void Initialize_10_UniqueSystems()
 		{
-			const int Count = 1000;
-
-			var builder = new InitializationContextBuilder();
-			for (int i = 0; i < Count; i++)
-			{
-				builder.AddSystem(new BenchmarkSystem());
-			}
-
-			var context = builder.Build();
-
 			Measure.Method(() =>
 				{
+					InitializationContext context = CreateContext();
 					context.InitializationAsync(CancellationToken.None)
 						.GetAwaiter()
 						.GetResult();
@@ -57,6 +42,85 @@ namespace DTech.Pulse.Tests
 				.IterationsPerMeasurement(1)
 				.MeasurementCount(10)
 				.Run();
+		}
+
+		private static InitializationContext CreateContext()
+		{
+			var builder = new InitializationContextBuilder();
+			IInitializable[] systems = CreateSystems();
+			for (int i = 0; i < systems.Length; i++)
+			{
+				builder.AddSystem(systems[i]);
+			}
+
+			return builder.Build();
+		}
+
+		private static IInitializable[] CreateSystems()
+		{
+			return new IInitializable[]
+			{
+				new BenchmarkSystemA(),
+				new BenchmarkSystemB(),
+				new BenchmarkSystemC(),
+				new BenchmarkSystemD(),
+				new BenchmarkSystemE(),
+				new BenchmarkSystemF(),
+				new BenchmarkSystemG(),
+				new BenchmarkSystemH(),
+				new BenchmarkSystemI(),
+				new BenchmarkSystemJ(),
+			};
+		}
+
+		private sealed class BenchmarkSystemA : IInitializable
+		{
+			public Task InitializeAsync(CancellationToken token) => Task.CompletedTask;
+		}
+
+		private sealed class BenchmarkSystemB : IInitializable
+		{
+			public Task InitializeAsync(CancellationToken token) => Task.CompletedTask;
+		}
+
+		private sealed class BenchmarkSystemC : IInitializable
+		{
+			public Task InitializeAsync(CancellationToken token) => Task.CompletedTask;
+		}
+
+		private sealed class BenchmarkSystemD : IInitializable
+		{
+			public Task InitializeAsync(CancellationToken token) => Task.CompletedTask;
+		}
+
+		private sealed class BenchmarkSystemE : IInitializable
+		{
+			public Task InitializeAsync(CancellationToken token) => Task.CompletedTask;
+		}
+
+		private sealed class BenchmarkSystemF : IInitializable
+		{
+			public Task InitializeAsync(CancellationToken token) => Task.CompletedTask;
+		}
+
+		private sealed class BenchmarkSystemG : IInitializable
+		{
+			public Task InitializeAsync(CancellationToken token) => Task.CompletedTask;
+		}
+
+		private sealed class BenchmarkSystemH : IInitializable
+		{
+			public Task InitializeAsync(CancellationToken token) => Task.CompletedTask;
+		}
+
+		private sealed class BenchmarkSystemI : IInitializable
+		{
+			public Task InitializeAsync(CancellationToken token) => Task.CompletedTask;
+		}
+
+		private sealed class BenchmarkSystemJ : IInitializable
+		{
+			public Task InitializeAsync(CancellationToken token) => Task.CompletedTask;
 		}
 	}
 }
