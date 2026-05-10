@@ -50,7 +50,6 @@ namespace DTech.Pulse
 				{
 					return;
 				}
-
 			}
 
 			_nodes.Clear();

@@ -93,7 +93,7 @@ namespace DTech.Pulse.Tests
             builder.AddSystem(a);
             builder.AddSystem(b);
 
-            var exception = Assert.Throws<Exception>(() => builder.Build());
+            var exception = Assert.Throws<InvalidOperationException>(() => builder.Build());
             StringAssert.Contains("Cyclic dependencies detected", exception!.Message);
         }
 
@@ -187,7 +187,8 @@ namespace DTech.Pulse.Tests
             builder.AddSystem(criticalSystem).SetAsCritical();
             builder.AddSystem(dummy).AddDependency<DepA>();
 
-            var exception = Assert.Throws<Exception>(() => builder.Build());
+            var exception = Assert.Throws<InvalidOperationException>(() => builder.Build());
+            StringAssert.Contains("which was not added", exception!.Message);
         }
 
         [Test]
