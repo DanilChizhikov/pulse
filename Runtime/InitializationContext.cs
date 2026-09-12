@@ -14,10 +14,16 @@ namespace DTech.Pulse
 		public event Action<Type> OnSystemInitializationCompleted;
 		public event Action OnCriticalSystemsInitialized;
 
+		private readonly object _criticalSystemsLock = new();
+		
 		private readonly List<ICollection<InitializationNode>> _batches;
 		private readonly HashSet<InitializationNode> _criticalSystems;
-		private readonly object _criticalSystemsLock = new();
 		private readonly List<InitializationNode> _nodes;
+		
+		public int TotalSystemsCount { get; }
+		public int TotalCriticalSystemsCount { get; }
+		public int InitializedSystemsCount { get; private set; }
+		public int InitializedCriticalSystemsCount { get; private set; }
 
 		private bool _isInitializationStarted;
 		private bool _isCriticalSystemsInitializedEventInvoked;
@@ -30,6 +36,9 @@ namespace DTech.Pulse
 			_batches = batches;
 			_criticalSystems = new HashSet<InitializationNode>(criticalSystems);
 			_nodes = new List<InitializationNode>(nodes);
+			TotalSystemsCount = _nodes.Count;
+			TotalCriticalSystemsCount = _criticalSystems.Count;
+			InitializedSystemsCount = 0;
 		}
 
 		public async Task InitializationAsync(CancellationToken token)
@@ -80,6 +89,7 @@ namespace DTech.Pulse
 				}
 			}
 
+			InitializedCriticalSystemsCount++;
 			if (!shouldInvokeEvent)
 			{
 				return;
@@ -91,6 +101,7 @@ namespace DTech.Pulse
 		private async Task InitializeNodeAsync(InitializationNode node, CancellationToken token)
 		{
 			await node.InitializeAsync(token, SystemBeginInitializationCallback, SystemInitializationCompleteCallback);
+			InitializedSystemsCount++;
 			RemoveCriticalSystem(node);
 		}
 
