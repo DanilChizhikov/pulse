@@ -339,6 +339,39 @@ namespace DTech.Pulse.Tests
             Assert.That(deps, Is.Empty);
         }
 
+        [Test]
+        public void AddSystem_ShouldIncrementTotalSystemsCount()
+        {
+            var builder = new InitializationContextBuilder();
+            builder.AddSystem(new DummySystem());
+            builder.AddSystem(new CriticalSystem()).SetAsCritical();
+            builder.AddSystem(new CriticalSystemB()).SetAsCritical();
+            
+            InitializationContext context = builder.Build();
+            
+            Assert.NotNull(context, $"{nameof(InitializationContext)} must be created.");
+            Assert.AreEqual(3, context.TotalSystemsCount);
+            Assert.AreEqual(2, context.TotalCriticalSystemsCount);
+        }
+        
+        [Test]
+        public async Task Initialization_ShouldIncrementInitializedCount()
+        {
+            var builder = new InitializationContextBuilder();
+            builder.AddSystem(new DummySystem());
+            builder.AddSystem(new CriticalSystem()).SetAsCritical();
+            builder.AddSystem(new CriticalSystemB()).SetAsCritical();
+            InitializationContext context = builder.Build();
+            
+            Assert.AreEqual(0, context.InitializedSystemsCount);
+            Assert.AreEqual(0, context.InitializedCriticalSystemsCount);
+            
+            await context.InitializationAsync(CancellationToken.None);
+
+            Assert.AreEqual(3, context.InitializedSystemsCount);
+            Assert.AreEqual(2, context.InitializedCriticalSystemsCount);
+        }
+
         private object CreateNode()
         {
             var dummy = new DummySystem();
