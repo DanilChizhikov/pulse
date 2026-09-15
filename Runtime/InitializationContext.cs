@@ -15,11 +15,12 @@ namespace DTech.Pulse
 		public event Action OnCriticalSystemsInitialized;
 
 		private readonly object _criticalSystemsLock = new();
-		
+
 		private readonly List<ICollection<InitializationNode>> _batches;
 		private readonly HashSet<InitializationNode> _criticalSystems;
 		private readonly List<InitializationNode> _nodes;
-		
+		private readonly InitializationGraphRecorder _graphRecorder;
+
 		public int TotalSystemsCount { get; }
 		public int TotalCriticalSystemsCount { get; }
 		public int InitializedSystemsCount { get; private set; }
@@ -31,11 +32,13 @@ namespace DTech.Pulse
 		internal InitializationContext(
 			List<ICollection<InitializationNode>> batches,
 			IEnumerable<InitializationNode> criticalSystems,
-			IEnumerable<InitializationNode> nodes)
+			IEnumerable<InitializationNode> nodes,
+			InitializationGraphRecorder graphRecorder)
 		{
 			_batches = batches;
 			_criticalSystems = new HashSet<InitializationNode>(criticalSystems);
 			_nodes = new List<InitializationNode>(nodes);
+			_graphRecorder = graphRecorder;
 			TotalSystemsCount = _nodes.Count;
 			TotalCriticalSystemsCount = _criticalSystems.Count;
 			InitializedSystemsCount = 0;
@@ -50,15 +53,34 @@ namespace DTech.Pulse
 
 			_isInitializationStarted = true;
 
-			foreach (ICollection<InitializationNode> batch in _batches)
+			var graphStatus = InitializationGraphStatus.Failed;
+			_graphRecorder?.Begin();
+			try
 			{
-				IEnumerable<Task> tasks = batch.Select(node => InitializeNodeAsync(node, token));
-
-				await Task.WhenAll(tasks);
-				if (token.IsCancellationRequested)
+				for (int i = 0; i < _batches.Count; i++)
 				{
-					return;
+					IEnumerable<Task> tasks = _batches[i].Select(node => InitializeNodeAsync(node, token));
+
+					_graphRecorder?.MarkBatchStarted(i);
+					await Task.WhenAll(tasks);
+					_graphRecorder?.MarkBatchCompleted(i);
+					if (token.IsCancellationRequested)
+					{
+						graphStatus = InitializationGraphStatus.Cancelled;
+						return;
+					}
 				}
+
+				graphStatus = InitializationGraphStatus.Completed;
+			}
+			catch (OperationCanceledException) when (_graphRecorder != null)
+			{
+				graphStatus = InitializationGraphStatus.Cancelled;
+				throw;
+			}
+			finally
+			{
+				_graphRecorder?.Complete(graphStatus);
 			}
 
 			_nodes.Clear();
@@ -100,7 +122,18 @@ namespace DTech.Pulse
 
 		private async Task InitializeNodeAsync(InitializationNode node, CancellationToken token)
 		{
-			await node.InitializeAsync(token, SystemBeginInitializationCallback, SystemInitializationCompleteCallback);
+			_graphRecorder?.MarkSystemStarted(node);
+			try
+			{
+				await node.InitializeAsync(token, SystemBeginInitializationCallback, SystemInitializationCompleteCallback);
+			}
+			catch (Exception exception) when (_graphRecorder != null)
+			{
+				_graphRecorder.MarkSystemFailed(node, exception);
+				throw;
+			}
+
+			_graphRecorder?.MarkSystemCompleted(node);
 			InitializedSystemsCount++;
 			RemoveCriticalSystem(node);
 		}

@@ -48,23 +48,31 @@ namespace DTech.Pulse
 				throw new InvalidOperationException("This builder has already built an initialization context.");
 			}
 
-			List<ICollection<InitializationNode>> batches = BuildBatches(out HashSet<InitializationNode> criticalSystems);
+			List<ICollection<InitializationNode>> batches = BuildBatches(
+				out HashSet<InitializationNode> criticalSystems,
+				out Dictionary<InitializationNode, List<InitializationNode>> dependents);
 			for (int i = 0; i < _nodes.Count; i++)
 			{
 				_nodes[i].SetProcessed();
 			}
 
+			InitializationGraphRecorder graphRecorder = InitializationGraphRecording.IsEnabled
+				? new InitializationGraphRecorder(batches, dependents)
+				: null;
+
 			_isBuilt = true;
-			return new InitializationContext(batches, criticalSystems, _nodes);
+			return new InitializationContext(batches, criticalSystems, _nodes, graphRecorder);
 		}
 
-		private List<ICollection<InitializationNode>> BuildBatches(out HashSet<InitializationNode> criticalSystems)
+		private List<ICollection<InitializationNode>> BuildBatches(
+			out HashSet<InitializationNode> criticalSystems,
+			out Dictionary<InitializationNode, List<InitializationNode>> adjacency)
 		{
 			var batches = new List<ICollection<InitializationNode>>();
 			criticalSystems = new HashSet<InitializationNode>();
 
 			var inDegree = new Dictionary<InitializationNode, int>();
-			var adjacency = new Dictionary<InitializationNode, List<InitializationNode>>();
+			adjacency = new Dictionary<InitializationNode, List<InitializationNode>>();
 
 			foreach (var node in _nodes)
 			{
