@@ -1,0 +1,18 @@
+{
+    "name": "com.dtech.pulse.editor",
+    "rootNamespace": "DTech",
+    "references": [
+        "GUID:9a907cdb3eef45cabc80652b2555c622"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

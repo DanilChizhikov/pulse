@@ -5,6 +5,12 @@ using UnityEngine.Scripting;
 
 namespace DTech.Pulse
 {
+	/// <summary>
+	/// Collects systems and their dependencies and builds an <see cref="InitializationContext"/> out of them.
+	/// </summary>
+	/// <remarks>
+	/// A builder produces a single context: after <see cref="Build"/> it can no longer be used.
+	/// </remarks>
 	[Preserve]
 	public sealed class InitializationContextBuilder
 	{
@@ -13,6 +19,15 @@ namespace DTech.Pulse
 
 		private bool _isBuilt;
 
+		/// <summary>
+		/// Registers a system and resolves the dependencies declared with <see cref="InitDependencyAttribute"/>.
+		/// </summary>
+		/// <param name="system">System instance to initialize.</param>
+		/// <returns>A handle used to tune the dependencies and callbacks of the system.</returns>
+		/// <exception cref="ArgumentNullException">Thrown when <paramref name="system"/> is null.</exception>
+		/// <exception cref="InvalidOperationException">
+		/// Thrown when the context is already built or the system type is already registered.
+		/// </exception>
 		public IInitializationNodeHandle AddSystem(IInitializable system)
 		{
 			if (_isBuilt)
@@ -41,6 +56,13 @@ namespace DTech.Pulse
 			return node;
 		}
 
+		/// <summary>
+		/// Validates the dependency graph, splits the systems into parallel batches and creates the context.
+		/// </summary>
+		/// <returns>The initialization context ready to be run.</returns>
+		/// <exception cref="InvalidOperationException">
+		/// Thrown when the context is already built, a dependency is missing or ambiguous, or the graph contains a cycle.
+		/// </exception>
 		public InitializationContext Build()
 		{
 			if (_isBuilt)
@@ -48,23 +70,31 @@ namespace DTech.Pulse
 				throw new InvalidOperationException("This builder has already built an initialization context.");
 			}
 
-			List<ICollection<InitializationNode>> batches = BuildBatches(out HashSet<InitializationNode> criticalSystems);
+			List<ICollection<InitializationNode>> batches = BuildBatches(
+				out HashSet<InitializationNode> criticalSystems,
+				out Dictionary<InitializationNode, List<InitializationNode>> dependents);
 			for (int i = 0; i < _nodes.Count; i++)
 			{
 				_nodes[i].SetProcessed();
 			}
 
+			InitializationGraphRecorder graphRecorder = InitializationGraphRecording.IsEnabled
+				? new InitializationGraphRecorder(batches, dependents)
+				: null;
+
 			_isBuilt = true;
-			return new InitializationContext(batches, criticalSystems, _nodes);
+			return new InitializationContext(batches, criticalSystems, _nodes, graphRecorder);
 		}
 
-		private List<ICollection<InitializationNode>> BuildBatches(out HashSet<InitializationNode> criticalSystems)
+		private List<ICollection<InitializationNode>> BuildBatches(
+			out HashSet<InitializationNode> criticalSystems,
+			out Dictionary<InitializationNode, List<InitializationNode>> adjacency)
 		{
 			var batches = new List<ICollection<InitializationNode>>();
 			criticalSystems = new HashSet<InitializationNode>();
 
 			var inDegree = new Dictionary<InitializationNode, int>();
-			var adjacency = new Dictionary<InitializationNode, List<InitializationNode>>();
+			adjacency = new Dictionary<InitializationNode, List<InitializationNode>>();
 
 			foreach (var node in _nodes)
 			{

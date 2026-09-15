@@ -9,6 +9,10 @@ on:
     branches:
       - master
       - develop
+    
+permissions:
+  checks: write
+  contents: read
 
 jobs:
   testAllModes:

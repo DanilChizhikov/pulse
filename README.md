@@ -15,12 +15,14 @@
   - [Build an initialization context](#build-an-initialization-context)
   - [Tuning dependencies manually](#tuning-dependencies-manually)
   - [Listening to per-system callbacks](#listening-to-per-system-callbacks)
+  - [Recording the initialization graph](#recording-the-initialization-graph)
 - [API Reference](#api-reference)
   - [IInitializable](#iinitializable)
   - [InitDependencyAttribute](#initdependencyattribute)
   - [InitializationContextBuilder](#initializationcontextbuilder)
   - [InitializationContext](#initializationcontext)
   - [IInitializationNodeHandle](#initializationnodehandle)
+  - [InitializationGraphRecording](#initializationgraphrecording)
 - [Dependencies](#dependencies)
 - [License](#license)
 
@@ -103,6 +105,12 @@ For example `https://github.com/DanilChizhikov/pulse.git#v1.1.0`.
   If the token is canceled:
   - Pulse stops processing further batches;
   - any already running tasks can respect the token and exit early.
+
+
+- **Initialization graph recording (opt-in)**
+
+  Record batches, dependencies, start order and timings of every system and inspect them in a GraphView window
+  (`Window/DTech/Pulse/Initialization Graph`). Disabled by default, so it doesn't affect regular runs.
 
 ## Runtime compatibility
 
@@ -275,6 +283,59 @@ builder.AddSystem(db)
        .OnStartInitialize(type => Debug.Log($"Start init: {type.Name}"))
        .OnCompleteInitialize(type => Debug.Log($"Complete init: {type.Name}"));
 ```
+
+### Recording the initialization graph
+Pulse can record how an initialization actually went: batches, dependencies, start order, start offset, duration
+and status of every system. Recording is **disabled by default** — when it is off, no recorder is created and regular
+runs are not affected.
+
+**In the Editor**
+1. Enable `Tools/DTech/Pulse/Record Initialization Graph` (stored in `EditorPrefs`).
+2. Enter Play Mode. Every time an `InitializationContext` finishes (completed, cancelled or failed), a snapshot is saved
+   to `Library/Pulse/Graphs` (the last 20 snapshots are kept).
+3. Open `Window/DTech/Pulse/Initialization Graph` to browse snapshots:
+   - batches are shown as columns (groups) with their duration;
+   - edges go from a dependency to the systems that depend on it;
+   - each node shows start order, batch, start offset, duration and status;
+   - the node header goes from green (fast) to red (the slowest system); critical systems have a `CRITICAL` badge.
+
+**From code (e.g. in a player build)**
+```csharp
+InitializationGraphRecording.IsEnabled = true; // must be set before builder.Build()
+
+string path = Path.Combine(Application.persistentDataPath, "pulse-graph.json");
+
+//Can be called from non-main thread
+InitializationGraphRecording.OnSnapshotRecorded += snapshot =>
+{
+    File.WriteAllText(path, snapshot.ToJson(true));
+};
+```
+Copy the JSON to your machine and load it with **Open File...** in the Initialization Graph window.
+
+**Getting the file off the device**
+
+Android (`persistentDataPath` is `/storage/emulated/0/Android/data/<package-name>/files`):
+```bash
+adb shell run-as <package-name> ls files                       # sanity check for non-debuggable paths
+adb pull /storage/emulated/0/Android/data/<package-name>/files/pulse-graph.json .
+```
+For a non-debuggable release build the app-private path is not readable over `adb pull`; either use a debuggable
+build, or write the snapshot somewhere you can read (`adb shell run-as <package-name> cat files/pulse-graph.json > pulse-graph.json`).
+
+iOS (`persistentDataPath` is `<app container>/Documents`):
+1. Xcode -> `Window/Devices and Simulators` -> select the device -> **Installed Apps** -> select the app.
+2. `...` (gear) -> **Download Container...** and save the `.xcappdata` bundle.
+3. Right-click the bundle -> **Show Package Contents** -> `AppData/Documents/pulse-graph.json`.
+
+The app has to be installed with a development profile for **Download Container** to be available. If you want the
+file to show up in the Files app instead, enable `UIFileSharingEnabled` / `LSSupportsOpeningDocumentsInPlace` in
+`Info.plist` and copy it out over USB.
+
+Notes:
+- `IsEnabled` is read once per `Build()` call.
+- `OnSnapshotRecorded` may be raised on a non-main thread if your systems continue on the thread pool.
+- The measured duration of a system includes its callbacks (`OnStartInitialize` / `OnCompleteInitialize` and context events).
 
 ## API Reference
 This section covers the main public types. Internal types are not part of the public API and may change.
@@ -487,6 +548,31 @@ builder.AddSystem(db)
        .OnStartInitialize(type => Debug.Log($"Start: {type.Name}"))
        .OnCompleteInitialize(type => Debug.Log($"Done: {type.Name}"));
 ```
+
+### InitializationGraphRecording
+```csharp
+public static class InitializationGraphRecording
+{
+    public static event Action<InitializationGraphSnapshot> OnSnapshotRecorded;
+
+    public static bool IsEnabled { get; set; }
+}
+```
+Global switch for [initialization graph recording](#recording-the-initialization-graph).
+
+#### IsEnabled
+When `true`, contexts built afterwards record their initialization graph. Disabled by default.
+In the Editor it is synced with the `Tools/DTech/Pulse/Record Initialization Graph` menu toggle.
+
+#### OnSnapshotRecorded
+Raised once per recorded `InitializationAsync` run with an `InitializationGraphSnapshot`:
+- `Status` — `Completed`, `Cancelled` or `Failed`;
+- `RecordedAtUtc`, `TotalMilliseconds`;
+- `Batches` — started batches with start offset and duration;
+- `Systems` — per system: `TypeName`, `FullTypeName`, `BatchIndex`, `StartOrder` (`-1` if not started), `IsCritical`,
+  `Status`, `StartMilliseconds`, `DurationMilliseconds`, `DependencyIndices` (indices into `Systems`), `Error`.
+
+Use `snapshot.ToJson()` / `InitializationGraphSnapshot.FromJson(json)` to persist and restore snapshots.
 
 ## Dependencies
 - [Performance Testing Package for Unity v3.2.0](https://docs.unity3d.com/Packages/com.unity.test-framework.performance@3.2/manual/index.html)
