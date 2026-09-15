@@ -46,26 +46,27 @@ namespace DTech.Pulse.Editor
 			IReadOnlyList<InitializationSystemRecord> systems = snapshot.Systems;
 			double maxDurationMilliseconds = systems.Max(system => system.DurationMilliseconds);
 			var nodes = new InitializationSystemNode[systems.Count];
+			int[] levels = InitializationGraphLevels.Calculate(snapshot);
 
-			IEnumerable<IGrouping<int, int>> batches = Enumerable.Range(0, systems.Count)
-				.GroupBy(index => systems[index].BatchIndex)
-				.OrderBy(batch => batch.Key);
+			IEnumerable<IGrouping<int, int>> groupedLevels = Enumerable.Range(0, systems.Count)
+				.GroupBy(index => levels[index])
+				.OrderBy(level => level.Key);
 
-			foreach (IGrouping<int, int> batch in batches)
+			foreach (IGrouping<int, int> level in groupedLevels)
 			{
-				var group = new Group { title = GetBatchTitle(snapshot, batch.Key) };
+				var group = new Group { title = GetLevelTitle(systems, level) };
 				group.capabilities &= ~Capabilities.Deletable;
 				AddElement(group);
 
-				IEnumerable<int> orderedIndices = batch
+				IEnumerable<int> orderedIndices = level
 					.OrderBy(index => GetStartRank(systems[index]))
 					.ThenBy(index => systems[index].TypeName, StringComparer.Ordinal);
 
 				int row = 0;
 				foreach (int index in orderedIndices)
 				{
-					var node = new InitializationSystemNode(systems[index], maxDurationMilliseconds);
-					node.SetPosition(new Rect(batch.Key * ColumnWidth, row * RowHeight, 0f, 0f));
+					var node = new InitializationSystemNode(systems[index], levels[index], maxDurationMilliseconds);
+					node.SetPosition(new Rect(level.Key * ColumnWidth, row * RowHeight, 0f, 0f));
 					AddElement(node);
 					group.AddElement(node);
 					nodes[index] = node;
@@ -96,17 +97,32 @@ namespace DTech.Pulse.Editor
 			return system.StartOrder >= 0 ? system.StartOrder : int.MaxValue;
 		}
 
-		private static string GetBatchTitle(InitializationGraphSnapshot snapshot, int batchIndex)
+		private static string GetLevelTitle(
+			IReadOnlyList<InitializationSystemRecord> systems,
+			IGrouping<int, int> level)
 		{
-			foreach (InitializationBatchRecord batch in snapshot.Batches)
+			bool isStarted = false;
+			double minStartMilliseconds = double.MaxValue;
+			double maxEndMilliseconds = double.MinValue;
+
+			foreach (int index in level)
 			{
-				if (batch.Index == batchIndex)
+				InitializationSystemRecord system = systems[index];
+				if (system.StartOrder < 0)
 				{
-					return $"Batch {batchIndex} · {batch.DurationMilliseconds:0.##} ms";
+					continue;
 				}
+
+				isStarted = true;
+				minStartMilliseconds = Math.Min(minStartMilliseconds, system.StartMilliseconds);
+				maxEndMilliseconds = Math.Max(
+					maxEndMilliseconds,
+					system.StartMilliseconds + system.DurationMilliseconds);
 			}
 
-			return $"Batch {batchIndex} · not started";
+			return isStarted
+				? $"Level {level.Key} · {maxEndMilliseconds - minStartMilliseconds:0.##} ms"
+				: $"Level {level.Key} · not started";
 		}
 
 		private static GraphViewChange GraphViewChangedHandler(GraphViewChange change)

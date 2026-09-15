@@ -44,6 +44,38 @@ namespace DTech.Pulse.Tests
 				.Run();
 		}
 
+		[Test, Performance]
+		public void Initialize_10_ChainedSystems()
+		{
+			Measure.Method(() =>
+				{
+					InitializationContext context = CreateChainedContext();
+					context.InitializationAsync(CancellationToken.None)
+						.GetAwaiter()
+						.GetResult();
+				})
+				.WarmupCount(3)
+				.IterationsPerMeasurement(1)
+				.MeasurementCount(10)
+				.Run();
+		}
+
+		private static InitializationContext CreateChainedContext()
+		{
+			var builder = new InitializationContextBuilder();
+			IInitializable[] systems = CreateSystems();
+			for (int i = 0; i < systems.Length; i++)
+			{
+				IInitializationNodeHandle handle = builder.AddSystem(systems[i]);
+				if (i > 0)
+				{
+					handle.AddDependencies(systems[i - 1].GetType());
+				}
+			}
+
+			return builder.Build();
+		}
+
 		private static InitializationContext CreateContext()
 		{
 			var builder = new InitializationContextBuilder();

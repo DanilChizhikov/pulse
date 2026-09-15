@@ -129,8 +129,9 @@ namespace DTech.Pulse.Editor
 			}
 
 			_snapshotsMenu.text = Path.GetFileNameWithoutExtension(path);
+			int levelsCount = InitializationGraphLevels.GetCount(InitializationGraphLevels.Calculate(snapshot));
 			_summaryLabel.text = $"{snapshot.Status} · {snapshot.TotalMilliseconds:0.##} ms · " +
-				$"{snapshot.Systems.Count} systems · {snapshot.Batches.Count} batches";
+				$"{snapshot.Systems.Count} systems · {levelsCount} levels";
 			_graphView.Show(snapshot);
 		}
 
