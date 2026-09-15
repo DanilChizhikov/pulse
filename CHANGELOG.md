@@ -1,6 +1,25 @@
 # Changelog
 
-## [1.3.0] - Unreleased
+## [2.0.0] - Unreleased
+
+### Changed
+- Replaced the batched execution with dependency-driven scheduling: every system starts as soon as its own
+  dependencies are initialized, instead of waiting for the slowest system of its dependency level.
+  The duration of a run is now the length of the critical path.
+- `InitializationAsync` stops starting new systems on a failure and rethrows the original exception after the
+  already running systems are awaited.
+- Initialization bookkeeping (progress counters, critical systems, completion) is now fully synchronized,
+  so systems completing on background threads cannot corrupt the counters.
+
+### Added
+- `IInitializationFramePacer` and `InitializationContextBuilder.SetFramePacer` — optional frame gate that
+  postpones the next systems while the current frame is overloaded.
+- `PlayerLoopFramePacer` — built-in pacer that hooks into the player loop without a `MonoBehaviour`.
+
+### Removed
+- `InitializationBatchRecord`, `InitializationGraphSnapshot.Batches` and `InitializationSystemRecord.BatchIndex`:
+  batches no longer exist at runtime. The graph window derives dependency levels from `DependencyIndices`.
+  Snapshots serialized by 1.x cannot be restored with `InitializationGraphSnapshot.FromJson`.
 
 ## [1.2.0] - 2026-09-15
 
