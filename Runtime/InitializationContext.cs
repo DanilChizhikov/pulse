@@ -7,11 +7,29 @@ using UnityEngine.Scripting;
 
 namespace DTech.Pulse
 {
+	/// <summary>
+	/// Ready-to-run initialization plan built by <see cref="InitializationContextBuilder"/>.
+	/// </summary>
+	/// <remarks>
+	/// Systems are grouped into batches by their dependencies; systems inside one batch run in parallel,
+	/// and batches run one after another. A context can be executed only once.
+	/// </remarks>
 	[Preserve]
 	public sealed class InitializationContext
 	{
+		/// <summary>
+		/// Raised right before any system starts initializing. Provides the system type.
+		/// </summary>
 		public event Action<Type> OnSystemInitializationBegan;
+
+		/// <summary>
+		/// Raised right after any system finishes initializing. Provides the system type.
+		/// </summary>
 		public event Action<Type> OnSystemInitializationCompleted;
+
+		/// <summary>
+		/// Raised once, when every system marked with <see cref="IInitializationNodeHandle.SetAsCritical"/> is initialized.
+		/// </summary>
 		public event Action OnCriticalSystemsInitialized;
 
 		private readonly object _criticalSystemsLock = new();
@@ -21,9 +39,24 @@ namespace DTech.Pulse
 		private readonly List<InitializationNode> _nodes;
 		private readonly InitializationGraphRecorder _graphRecorder;
 
+		/// <summary>
+		/// Total number of systems in this context.
+		/// </summary>
 		public int TotalSystemsCount { get; }
+
+		/// <summary>
+		/// Total number of systems marked as critical.
+		/// </summary>
 		public int TotalCriticalSystemsCount { get; }
+
+		/// <summary>
+		/// Number of systems already initialized. Useful to drive a loading progress bar.
+		/// </summary>
 		public int InitializedSystemsCount { get; private set; }
+
+		/// <summary>
+		/// Number of critical systems already initialized.
+		/// </summary>
 		public int InitializedCriticalSystemsCount { get; private set; }
 
 		private bool _isInitializationStarted;
@@ -44,6 +77,12 @@ namespace DTech.Pulse
 			InitializedSystemsCount = 0;
 		}
 
+		/// <summary>
+		/// Runs the initialization, batch by batch, until every system is initialized.
+		/// </summary>
+		/// <param name="token">Token used to cancel the initialization between batches.</param>
+		/// <returns>A task that completes when all systems are initialized or the operation is cancelled.</returns>
+		/// <exception cref="InvalidOperationException">Thrown when the context has already been run.</exception>
 		public async Task InitializationAsync(CancellationToken token)
 		{
 			if (_isInitializationStarted)
