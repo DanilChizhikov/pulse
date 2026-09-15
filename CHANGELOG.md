@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.0] - Unreleased
+
+### Added
+- Opt-in initialization graph recording via `InitializationGraphRecording` (`IsEnabled`, `OnSnapshotRecorded`).
+  Captures batches, dependencies, start order, start offset, duration and status of every system.
+- `InitializationGraphSnapshot` with `ToJson` / `FromJson` for dumping graphs from player builds.
+- Editor toggle `Tools/DTech/Pulse/Record Initialization Graph`; snapshots are saved to `Library/Pulse/Graphs`.
+- `Window/DTech/Pulse/Initialization Graph` GraphView window for browsing recorded snapshots.
+
 ## [1.1.0] - 2026-05-10
 
 ### Added
