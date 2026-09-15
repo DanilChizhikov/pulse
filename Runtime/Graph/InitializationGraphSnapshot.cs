@@ -6,7 +6,7 @@ using UnityEngine.Scripting;
 namespace DTech.Pulse
 {
 	/// <summary>
-	/// Serializable result of a single initialization run: its batches, systems and timings.
+	/// Serializable result of a single initialization run: its systems, their order and timings.
 	/// </summary>
 	[Serializable]
 	[Preserve]
@@ -15,7 +15,6 @@ namespace DTech.Pulse
 		[SerializeField] private string _recordedAtUtc;
 		[SerializeField] private InitializationGraphStatus _status;
 		[SerializeField] private double _totalMilliseconds;
-		[SerializeField] private List<InitializationBatchRecord> _batches;
 		[SerializeField] private List<InitializationSystemRecord> _systems;
 		
 		/// <summary>
@@ -34,12 +33,7 @@ namespace DTech.Pulse
 		public double TotalMilliseconds => _totalMilliseconds;
 
 		/// <summary>
-		/// Recorded batches, ordered the same way they were executed.
-		/// </summary>
-		public IReadOnlyList<InitializationBatchRecord> Batches => _batches;
-
-		/// <summary>
-		/// Recorded systems of every batch.
+		/// Recorded systems, ordered the same way they were registered in the builder.
 		/// </summary>
 		public IReadOnlyList<InitializationSystemRecord> Systems => _systems;
 
@@ -47,13 +41,11 @@ namespace DTech.Pulse
 			string recordedAtUtc,
 			InitializationGraphStatus status,
 			double totalMilliseconds,
-			List<InitializationBatchRecord> batches,
 			List<InitializationSystemRecord> systems)
 		{
 			_recordedAtUtc = recordedAtUtc;
 			_status = status;
 			_totalMilliseconds = totalMilliseconds;
-			_batches = batches ?? throw new ArgumentNullException(nameof(batches));
 			_systems = systems ?? throw new ArgumentNullException(nameof(systems));
 		}
 
@@ -88,7 +80,6 @@ namespace DTech.Pulse
 				throw new ArgumentException("Json does not contain an initialization graph snapshot.", nameof(json));
 			}
 
-			snapshot._batches ??= new List<InitializationBatchRecord>();
 			snapshot._systems ??= new List<InitializationSystemRecord>();
 			return snapshot;
 		}

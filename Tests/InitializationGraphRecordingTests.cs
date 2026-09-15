@@ -46,7 +46,6 @@ namespace DTech.Pulse.Tests
             InitializationGraphSnapshot snapshot = _snapshots[0];
             Assert.AreEqual(InitializationGraphStatus.Completed, snapshot.Status);
             Assert.AreEqual(4, snapshot.Systems.Count);
-            Assert.AreEqual(3, snapshot.Batches.Count);
 
             int criticalIndex = IndexOf(snapshot, typeof(CriticalSystem));
             int criticalBIndex = IndexOf(snapshot, typeof(CriticalSystemB));
@@ -57,10 +56,6 @@ namespace DTech.Pulse.Tests
             InitializationSystemRecord simple = snapshot.Systems[simpleIndex];
             InitializationSystemRecord dependent = snapshot.Systems[dependentIndex];
 
-            Assert.AreEqual(0, critical.BatchIndex);
-            Assert.AreEqual(0, criticalB.BatchIndex);
-            Assert.AreEqual(1, simple.BatchIndex);
-            Assert.AreEqual(2, dependent.BatchIndex);
             Assert.AreEqual(0, critical.StartOrder);
             Assert.AreEqual(1, criticalB.StartOrder);
             Assert.AreEqual(2, simple.StartOrder);
@@ -119,7 +114,7 @@ namespace DTech.Pulse.Tests
         }
 
         [Test]
-        public async Task Recording_ShouldPublishCancelledSnapshot_WhenTokenCancelledBetweenBatches()
+        public async Task Recording_ShouldPublishCancelledSnapshot_WhenTokenCancelledDuringInitialization()
         {
             InitializationGraphRecording.IsEnabled = true;
             using var cancellationTokenSource = new CancellationTokenSource();
@@ -132,7 +127,6 @@ namespace DTech.Pulse.Tests
             Assert.AreEqual(1, _snapshots.Count);
             InitializationGraphSnapshot snapshot = _snapshots[0];
             Assert.AreEqual(InitializationGraphStatus.Cancelled, snapshot.Status);
-            Assert.AreEqual(1, snapshot.Batches.Count, "Only the first batch must be started.");
 
             InitializationSystemRecord cancelling = snapshot.Systems[IndexOf(snapshot, typeof(CancellingSystem))];
             Assert.AreEqual(InitializationSystemStatus.Completed, cancelling.Status);
@@ -158,7 +152,6 @@ namespace DTech.Pulse.Tests
             Assert.AreEqual(original.RecordedAtUtc, restored.RecordedAtUtc);
             Assert.AreEqual(original.Status, restored.Status);
             Assert.AreEqual(original.TotalMilliseconds, restored.TotalMilliseconds, MillisecondsTolerance);
-            Assert.AreEqual(original.Batches.Count, restored.Batches.Count);
             Assert.AreEqual(original.Systems.Count, restored.Systems.Count);
 
             for (int i = 0; i < original.Systems.Count; i++)
@@ -167,7 +160,6 @@ namespace DTech.Pulse.Tests
                 InitializationSystemRecord actual = restored.Systems[i];
                 Assert.AreEqual(expected.TypeName, actual.TypeName);
                 Assert.AreEqual(expected.FullTypeName, actual.FullTypeName);
-                Assert.AreEqual(expected.BatchIndex, actual.BatchIndex);
                 Assert.AreEqual(expected.StartOrder, actual.StartOrder);
                 Assert.AreEqual(expected.IsCritical, actual.IsCritical);
                 Assert.AreEqual(expected.Status, actual.Status);

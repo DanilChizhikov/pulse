@@ -17,6 +17,7 @@ namespace DTech.Pulse
 		private readonly List<InitializationNode> _nodes = new();
 		private readonly Dictionary<Type, InitializationNode> _nodesByType = new();
 
+		private IInitializationFramePacer _framePacer;
 		private bool _isBuilt;
 
 		/// <summary>
@@ -57,7 +58,24 @@ namespace DTech.Pulse
 		}
 
 		/// <summary>
-		/// Validates the dependency graph, splits the systems into parallel batches and creates the context.
+		/// Sets the frame pacer used to postpone systems while the current frame is overloaded.
+		/// </summary>
+		/// <param name="framePacer">Pacer implementation, or null to initialize without any frame gate.</param>
+		/// <returns>The same builder, allowing calls to be chained.</returns>
+		/// <exception cref="InvalidOperationException">Thrown when the context is already built.</exception>
+		public InitializationContextBuilder SetFramePacer(IInitializationFramePacer framePacer)
+		{
+			if (_isBuilt)
+			{
+				throw new InvalidOperationException("This builder has already built an initialization context.");
+			}
+
+			_framePacer = framePacer;
+			return this;
+		}
+
+		/// <summary>
+		/// Validates the dependency graph and creates the context.
 		/// </summary>
 		/// <returns>The initialization context ready to be run.</returns>
 		/// <exception cref="InvalidOperationException">
@@ -70,86 +88,119 @@ namespace DTech.Pulse
 				throw new InvalidOperationException("This builder has already built an initialization context.");
 			}
 
-			List<ICollection<InitializationNode>> batches = BuildBatches(
-				out HashSet<InitializationNode> criticalSystems,
-				out Dictionary<InitializationNode, List<InitializationNode>> dependents);
-			for (int i = 0; i < _nodes.Count; i++)
+			BuildPlan(
+				out InitializationNode[] nodes,
+				out int[] blockingDependencies,
+				out int[][] dependents,
+				out int criticalSystemsCount);
+			for (int i = 0; i < nodes.Length; i++)
 			{
-				_nodes[i].SetProcessed();
+				nodes[i].SetProcessed();
 			}
 
 			InitializationGraphRecorder graphRecorder = InitializationGraphRecording.IsEnabled
-				? new InitializationGraphRecorder(batches, dependents)
+				? new InitializationGraphRecorder(nodes, dependents)
 				: null;
 
 			_isBuilt = true;
-			return new InitializationContext(batches, criticalSystems, _nodes, graphRecorder);
+			return new InitializationContext(
+				nodes,
+				blockingDependencies,
+				dependents,
+				criticalSystemsCount,
+				graphRecorder,
+				_framePacer);
 		}
 
-		private List<ICollection<InitializationNode>> BuildBatches(
-			out HashSet<InitializationNode> criticalSystems,
-			out Dictionary<InitializationNode, List<InitializationNode>> adjacency)
+		private void BuildPlan(
+			out InitializationNode[] nodes,
+			out int[] blockingDependencies,
+			out int[][] dependents,
+			out int criticalSystemsCount)
 		{
-			var batches = new List<ICollection<InitializationNode>>();
-			criticalSystems = new HashSet<InitializationNode>();
+			int count = _nodes.Count;
+			nodes = _nodes.ToArray();
+			blockingDependencies = new int[count];
+			dependents = new int[count][];
+			criticalSystemsCount = 0;
 
-			var inDegree = new Dictionary<InitializationNode, int>();
-			adjacency = new Dictionary<InitializationNode, List<InitializationNode>>();
-
-			foreach (var node in _nodes)
+			var indices = new Dictionary<InitializationNode, int>(count);
+			for (int i = 0; i < count; i++)
 			{
-				inDegree[node] = 0;
-				adjacency[node] = new List<InitializationNode>();
+				indices.Add(nodes[i], i);
 			}
 
-			foreach (var node in _nodes)
+			var dependentLists = new List<int>[count];
+			for (int i = 0; i < count; i++)
 			{
+				InitializationNode node = nodes[i];
 				List<Type> dependencies = node.GetDependencies();
-				foreach (var depType in dependencies)
+				for (int j = 0; j < dependencies.Count; j++)
 				{
-					InitializationNode depNode = ResolveDependencyNode(node, depType);
-					adjacency[depNode].Add(node);
-					inDegree[node]++;
+					InitializationNode dependencyNode = ResolveDependencyNode(node, dependencies[j]);
+					int dependencyIndex = indices[dependencyNode];
+					(dependentLists[dependencyIndex] ??= new List<int>()).Add(i);
+					blockingDependencies[i]++;
 				}
 
 				if (node.IsCritical)
 				{
-					criticalSystems.Add(node);
+					criticalSystemsCount++;
 				}
 			}
 
-			var queue = new Queue<InitializationNode>(inDegree.Where(kv => kv.Value == 0).Select(kv => kv.Key));
+			for (int i = 0; i < count; i++)
+			{
+				dependents[i] = dependentLists[i]?.ToArray() ?? Array.Empty<int>();
+			}
 
+			ValidateNoCycles(nodes, blockingDependencies, dependents);
+		}
+
+		private static void ValidateNoCycles(
+			InitializationNode[] nodes,
+			int[] blockingDependencies,
+			int[][] dependents)
+		{
+			int count = nodes.Length;
+			var remainingDependencies = new int[count];
+			Array.Copy(blockingDependencies, remainingDependencies, count);
+
+			var queue = new Queue<int>();
+			for (int i = 0; i < count; i++)
+			{
+				if (remainingDependencies[i] == 0)
+				{
+					queue.Enqueue(i);
+				}
+			}
+
+			int processedCount = 0;
 			while (queue.Count > 0)
 			{
-				var batch = new List<InitializationNode>();
-				int batchCount = queue.Count;
+				int index = queue.Dequeue();
+				processedCount++;
 
-				for (int i = 0; i < batchCount; i++)
+				int[] nodeDependents = dependents[index];
+				for (int i = 0; i < nodeDependents.Length; i++)
 				{
-					var node = queue.Dequeue();
-					batch.Add(node);
-					List<InitializationNode> dependents = adjacency[node];
-					foreach (InitializationNode dependent in dependents)
+					int dependentIndex = nodeDependents[i];
+					if (--remainingDependencies[dependentIndex] == 0)
 					{
-						inDegree[dependent]--;
-						if (inDegree[dependent] == 0)
-						{
-							queue.Enqueue(dependent);
-						}
+						queue.Enqueue(dependentIndex);
 					}
 				}
-
-				batches.Add(batch);
 			}
 
-			if (inDegree.Any(kv => kv.Value > 0))
+			if (processedCount == count)
 			{
-				string cycle = string.Join(", ", inDegree.Where(kv => kv.Value > 0).Select(kv => kv.Key.SystemType.Name));
-				throw new InvalidOperationException("Cyclic dependencies detected: " + cycle);
+				return;
 			}
 
-			return batches;
+			IEnumerable<string> cycleNames = Enumerable.Range(0, count)
+				.Where(index => remainingDependencies[index] > 0)
+				.Select(index => nodes[index].SystemType.Name);
+			throw new InvalidOperationException("Cyclic dependencies detected: " + string.Join(", ", cycleNames));
 		}
 
 		private InitializationNode ResolveDependencyNode(InitializationNode node, Type dependencyType)

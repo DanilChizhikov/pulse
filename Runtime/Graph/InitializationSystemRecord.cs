@@ -14,7 +14,6 @@ namespace DTech.Pulse
 	{
 		[SerializeField] private string _typeName;
 		[SerializeField] private string _fullTypeName;
-		[SerializeField] private int _batchIndex;
 		[SerializeField] private int _startOrder;
 		[SerializeField] private bool _isCritical;
 		[SerializeField] private InitializationSystemStatus _status;
@@ -32,11 +31,6 @@ namespace DTech.Pulse
 		/// Namespace-qualified name of the system type.
 		/// </summary>
 		public string FullTypeName => _fullTypeName;
-
-		/// <summary>
-		/// Index of the batch the system was initialized in.
-		/// </summary>
-		public int BatchIndex => _batchIndex;
 
 		/// <summary>
 		/// Order in which the system started, counted across the whole run.
@@ -76,7 +70,6 @@ namespace DTech.Pulse
 		internal InitializationSystemRecord(
 			string typeName,
 			string fullTypeName,
-			int batchIndex,
 			int startOrder,
 			bool isCritical,
 			InitializationSystemStatus status,
@@ -87,7 +80,6 @@ namespace DTech.Pulse
 		{
 			_typeName = typeName;
 			_fullTypeName = fullTypeName;
-			_batchIndex = batchIndex;
 			_startOrder = startOrder;
 			_isCritical = isCritical;
 			_status = status;

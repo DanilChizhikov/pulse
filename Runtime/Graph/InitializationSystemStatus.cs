@@ -9,7 +9,7 @@ namespace DTech.Pulse
 	public enum InitializationSystemStatus
 	{
 		/// <summary>
-		/// The system never started, because the run ended before its batch.
+		/// The system never started, because the run ended before its dependencies were initialized.
 		/// </summary>
 		NotStarted = 0,
 
