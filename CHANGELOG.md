@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.2.0] - Unreleased
+## [1.2.0] - 2026-09-15
 
 ### Added
 - Opt-in initialization graph recording via `InitializationGraphRecording` (`IsEnabled`, `OnSnapshotRecorded`).
