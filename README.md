@@ -1,5 +1,5 @@
 # Pulse
-[![Unity Version](https://img.shields.io/badge/unity-2022.3+-000.svg)](https://unity3d.com/get-unity/download/archive)
+[![Unity Version](https://img.shields.io/badge/unity-6000.0+-000.svg)](https://unity3d.com/get-unity/download/archive)
 ![Unity Tests](https://github.com/DanilChizhikov/pulse/actions/workflows/tests.yml/badge.svg?branch=master)
 
 ## Table of Contents
@@ -30,7 +30,7 @@
 
 ### Prerequisites
 - [GIT](https://git-scm.com/downloads)
-- [Unity](https://unity.com/releases/editor/archive) 2022.3+
+- [Unity](https://unity.com/releases/editor/archive) 6000.0+
 
 ### Manual Installation
 1. Download the .unitypackage from the [releases](https://github.com/DanilChizhikov/pulse/releases/) page.
@@ -46,7 +46,7 @@
 
 If you want to set a target version, Pulse uses the `v*.*.*` release tag so you can specify a version like #v1.1.0.
 
-For example `https://github.com/DanilChizhikov/pulse.git#v1.1.0`.
+For example `https://github.com/DanilChizhikov/pulse.git#v1.2.0`.
 
 ## Features
 - **Attribute–based dependency discovery**
