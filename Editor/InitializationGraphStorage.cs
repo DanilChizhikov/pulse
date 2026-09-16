@@ -10,7 +10,7 @@ namespace DTech.Pulse.Editor
 	internal static class InitializationGraphStorage
 	{
 		private const int MaxStoredSnapshots = 20;
-		private const string FileExtension = ".json";
+		private const string FileExtension = ".xml";
 
 		public static event Action<string> OnSaved;
 
@@ -34,7 +34,7 @@ namespace DTech.Pulse.Editor
 				path = Path.Combine(directoryPath, $"{fileName}_{suffix}{FileExtension}");
 			}
 
-			File.WriteAllText(path, snapshot.ToJson(true));
+			File.WriteAllText(path, snapshot.ToXml(true));
 			TrimOldSnapshots();
 			OnSaved?.Invoke(path);
 		}
@@ -54,7 +54,7 @@ namespace DTech.Pulse.Editor
 
 		public static InitializationGraphSnapshot Load(string path)
 		{
-			return InitializationGraphSnapshot.FromJson(File.ReadAllText(path));
+			return InitializationGraphSnapshot.FromXml(File.ReadAllText(path));
 		}
 
 		private static void TrimOldSnapshots()

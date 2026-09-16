@@ -137,7 +137,7 @@ namespace DTech.Pulse.Tests
         }
 
         [Test]
-        public async Task Snapshot_ShouldSurviveJsonRoundTrip()
+        public async Task Snapshot_ShouldSurviveXmlRoundTrip([Values(false, true)] bool prettyPrint)
         {
             InitializationGraphRecording.IsEnabled = true;
             var builder = new InitializationContextBuilder();
@@ -147,7 +147,7 @@ namespace DTech.Pulse.Tests
             await builder.Build().InitializationAsync(CancellationToken.None);
 
             InitializationGraphSnapshot original = _snapshots.Single();
-            InitializationGraphSnapshot restored = InitializationGraphSnapshot.FromJson(original.ToJson());
+            InitializationGraphSnapshot restored = InitializationGraphSnapshot.FromXml(original.ToXml(prettyPrint));
 
             Assert.AreEqual(original.RecordedAtUtc, restored.RecordedAtUtc);
             Assert.AreEqual(original.Status, restored.Status);
@@ -171,9 +171,51 @@ namespace DTech.Pulse.Tests
         }
 
         [Test]
-        public void FromJson_ShouldThrow_WhenJsonIsEmpty()
+        public void Snapshot_ShouldSurviveXmlRoundTrip_WhenSystemFailed()
         {
-            Assert.Throws<ArgumentException>(() => InitializationGraphSnapshot.FromJson(string.Empty));
+            InitializationGraphRecording.IsEnabled = true;
+            var builder = new InitializationContextBuilder();
+            builder.AddSystem(new FailingSystem());
+            builder.AddSystem(new FailingSystemDependent());
+
+            InitializationContext context = builder.Build();
+            Assert.Throws<InvalidOperationException>(
+                () => context.InitializationAsync(CancellationToken.None).GetAwaiter().GetResult());
+
+            InitializationGraphSnapshot original = _snapshots.Single();
+            InitializationGraphSnapshot restored = InitializationGraphSnapshot.FromXml(original.ToXml(true));
+
+            Assert.AreEqual(InitializationGraphStatus.Failed, restored.Status);
+
+            InitializationSystemRecord failing = restored.Systems[IndexOf(restored, typeof(FailingSystem))];
+            Assert.AreEqual(InitializationSystemStatus.Failed, failing.Status);
+            StringAssert.Contains(FailingSystem.ErrorMessage, failing.Error);
+
+            int dependentIndex = IndexOf(restored, typeof(FailingSystemDependent));
+            InitializationSystemRecord dependent = restored.Systems[dependentIndex];
+            Assert.AreEqual(InitializationSystemStatus.NotStarted, dependent.Status);
+            Assert.AreEqual(-1, dependent.StartOrder);
+            Assert.AreEqual(string.Empty, dependent.Error);
+            CollectionAssert.AreEqual(
+                original.Systems[dependentIndex].DependencyIndices, dependent.DependencyIndices);
+        }
+
+        [Test]
+        public void FromXml_ShouldThrow_WhenXmlIsEmpty()
+        {
+            Assert.Throws<ArgumentException>(() => InitializationGraphSnapshot.FromXml(string.Empty));
+        }
+
+        [Test]
+        public void FromXml_ShouldThrow_WhenXmlIsMalformed()
+        {
+            Assert.Throws<ArgumentException>(() => InitializationGraphSnapshot.FromXml("<InitializationGraph>"));
+        }
+
+        [Test]
+        public void FromXml_ShouldThrow_WhenRootIsUnexpected()
+        {
+            Assert.Throws<ArgumentException>(() => InitializationGraphSnapshot.FromXml("<Other />"));
         }
 
         private void SnapshotRecordedHandler(InitializationGraphSnapshot snapshot)

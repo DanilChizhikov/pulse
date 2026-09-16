@@ -13,6 +13,12 @@
 - Initialization Graph window: edges implied by another dependency are hidden unless **All Edges** is enabled;
   selecting systems draws all of their direct edges and dims the systems they are not linked to.
 - Initialization Graph window: timings from 500 ms on are shown in seconds (`10.5 s` instead of `10500 ms`).
+- **Breaking:** snapshots are serialized as XML instead of JSON — `InitializationGraphSnapshot.ToJson` / `FromJson`
+  are replaced by `ToXml` / `FromXml`, and the editor stores graphs in `Library/Pulse/Graphs` as `.xml`.
+  Snapshots written by earlier versions cannot be restored, and `.json` files already in that folder are ignored.
+- **Breaking:** `InitializationGraphSnapshot` and `InitializationSystemRecord` are no longer `[Serializable]`
+  Unity types: their `[SerializeField]` backing fields are gone and the data is exposed as get-only properties.
+  `JsonUtility` and `SerializedProperty` no longer work with them; use `ToXml` / `FromXml`.
 
 ### Added
 - `IInitializationFramePacer` and `InitializationContextBuilder.SetFramePacer` — optional frame gate that
@@ -22,7 +28,7 @@
 ### Removed
 - `InitializationBatchRecord`, `InitializationGraphSnapshot.Batches` and `InitializationSystemRecord.BatchIndex`:
   batches no longer exist at runtime. The graph window derives dependency levels from `DependencyIndices`.
-  Snapshots serialized by 1.x cannot be restored with `InitializationGraphSnapshot.FromJson`.
+  Snapshots serialized by 1.x cannot be restored.
 
 ### Fixed
 - Initialization Graph window: edges could be detached, deleted or reconnected with the mouse.

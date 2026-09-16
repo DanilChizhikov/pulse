@@ -181,7 +181,7 @@ namespace DTech.Pulse.Editor
 
 		private void OpenFileButtonClickHandler()
 		{
-			string path = EditorUtility.OpenFilePanel("Open Initialization Graph", InitializationGraphStorage.DirectoryPath, "json");
+			string path = EditorUtility.OpenFilePanel("Open Initialization Graph", InitializationGraphStorage.DirectoryPath, "xml");
 			if (!string.IsNullOrEmpty(path))
 			{
 				LoadSnapshot(path);
