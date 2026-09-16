@@ -14,6 +14,7 @@ namespace DTech.Pulse.Editor
 		private const string DefaultSnapshotsMenuText = "Snapshots";
 
 		[SerializeField] private string _selectedPath;
+		[SerializeField] private bool _isShowingAllEdges;
 
 		private InitializationGraphView _graphView;
 		private ToolbarMenu _snapshotsMenu;
@@ -27,6 +28,14 @@ namespace DTech.Pulse.Editor
 			window.titleContent = new GUIContent(WindowTitle);
 			window.Show();
 		}
+		
+		private static string GetLatestSnapshotPath()
+		{
+			IReadOnlyList<string> paths = InitializationGraphStorage.GetSnapshotPaths();
+			return paths.Count > 0 ? paths[0] : null;
+		}
+		
+		private static string GetRecordCaption() => InitializationGraphRecordingMenu.IsRecordingEnabled ? "Stop Recording" : "Start Recording";
 
 		private void OnEnable()
 		{
@@ -49,6 +58,7 @@ namespace DTech.Pulse.Editor
 
 			_graphView = new InitializationGraphView();
 			_graphView.style.flexGrow = 1f;
+			_graphView.IsShowingAllEdges = _isShowingAllEdges;
 			rootVisualElement.Add(_graphView);
 
 			RefreshSnapshotsMenu();
@@ -66,6 +76,15 @@ namespace DTech.Pulse.Editor
 			toolbar.Add(new ToolbarButton(RevealButtonClickHandler) { text = "Reveal" });
 			toolbar.Add(new ToolbarButton(FrameAllButtonClickHandler) { text = "Frame All" });
 
+			var allEdgesToggle = new ToolbarToggle
+			{
+				text = "Transitive edges",
+				tooltip = "Also draw edges implied by other dependencies while nothing is selected.",
+				value = _isShowingAllEdges,
+			};
+			allEdgesToggle.RegisterValueChangedCallback(AllEdgesToggleChangedHandler);
+			toolbar.Add(allEdgesToggle);
+
 			var spacer = new VisualElement();
 			spacer.style.flexGrow = 1f;
 			toolbar.Add(spacer);
@@ -77,7 +96,7 @@ namespace DTech.Pulse.Editor
 
 			_recordToggle = new ToolbarToggle
 			{
-				text = "Record",
+				text = GetRecordCaption(),
 				value = InitializationGraphRecordingMenu.IsRecordingEnabled,
 			};
 			_recordToggle.RegisterValueChangedCallback(RecordToggleChangedHandler);
@@ -130,7 +149,7 @@ namespace DTech.Pulse.Editor
 
 			_snapshotsMenu.text = Path.GetFileNameWithoutExtension(path);
 			int levelsCount = InitializationGraphLevels.GetCount(InitializationGraphLevels.Calculate(snapshot));
-			_summaryLabel.text = $"{snapshot.Status} · {snapshot.TotalMilliseconds:0.##} ms · " +
+			_summaryLabel.text = $"{snapshot.Status} · {InitializationTimeFormat.Format(snapshot.TotalMilliseconds)} · " +
 				$"{snapshot.Systems.Count} systems · {levelsCount} levels";
 			_graphView.Show(snapshot);
 		}
@@ -192,12 +211,13 @@ namespace DTech.Pulse.Editor
 		private void RecordToggleChangedHandler(ChangeEvent<bool> changeEvent)
 		{
 			InitializationGraphRecordingMenu.IsRecordingEnabled = changeEvent.newValue;
+			_recordToggle.text = GetRecordCaption();
 		}
 
-		private static string GetLatestSnapshotPath()
+		private void AllEdgesToggleChangedHandler(ChangeEvent<bool> changeEvent)
 		{
-			IReadOnlyList<string> paths = InitializationGraphStorage.GetSnapshotPaths();
-			return paths.Count > 0 ? paths[0] : null;
+			_isShowingAllEdges = changeEvent.newValue;
+			_graphView.IsShowingAllEdges = changeEvent.newValue;
 		}
 	}
 }

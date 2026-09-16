@@ -99,8 +99,8 @@ namespace DTech.Pulse.Editor
 
 			string order = record.StartOrder >= 0 ? $"#{record.StartOrder + 1}" : "Not started";
 			details.Add(new Label($"{order} · Level {level}"));
-			details.Add(new Label($"Start: +{record.StartMilliseconds:0.##} ms"));
-			details.Add(new Label($"Duration: {record.DurationMilliseconds:0.##} ms"));
+			details.Add(new Label($"Start: +{InitializationTimeFormat.Format(record.StartMilliseconds)}"));
+			details.Add(new Label($"Duration: {InitializationTimeFormat.Format(record.DurationMilliseconds)}"));
 			details.Add(new Label($"Status: {record.Status}"));
 			return details;
 		}
