@@ -1,6 +1,6 @@
 # Changelog
 
-## [2.0.0] - Unreleased
+## [2.0.0] - 2026-09-16
 
 ### Changed
 - Replaced the batched execution with dependency-driven scheduling: every system starts as soon as its own
