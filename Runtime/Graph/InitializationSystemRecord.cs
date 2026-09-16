@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using UnityEngine;
 using UnityEngine.Scripting;
 
 namespace DTech.Pulse
@@ -8,75 +7,57 @@ namespace DTech.Pulse
 	/// <summary>
 	/// Result and timings of a single system inside a recorded initialization run.
 	/// </summary>
-	[Serializable]
 	[Preserve]
 	public sealed class InitializationSystemRecord
 	{
-		[SerializeField] private string _typeName;
-		[SerializeField] private string _fullTypeName;
-		[SerializeField] private int _batchIndex;
-		[SerializeField] private int _startOrder;
-		[SerializeField] private bool _isCritical;
-		[SerializeField] private InitializationSystemStatus _status;
-		[SerializeField] private double _startMilliseconds;
-		[SerializeField] private double _durationMilliseconds;
-		[SerializeField] private int[] _dependencyIndices;
-		[SerializeField] private string _error;
-
 		/// <summary>
 		/// Short name of the system type.
 		/// </summary>
-		public string TypeName => _typeName;
+		public string TypeName { get; }
 
 		/// <summary>
 		/// Namespace-qualified name of the system type.
 		/// </summary>
-		public string FullTypeName => _fullTypeName;
-
-		/// <summary>
-		/// Index of the batch the system was initialized in.
-		/// </summary>
-		public int BatchIndex => _batchIndex;
+		public string FullTypeName { get; }
 
 		/// <summary>
 		/// Order in which the system started, counted across the whole run.
 		/// </summary>
-		public int StartOrder => _startOrder;
+		public int StartOrder { get; }
 
 		/// <summary>
 		/// Whether the system was marked as critical.
 		/// </summary>
-		public bool IsCritical => _isCritical;
+		public bool IsCritical { get; }
 
 		/// <summary>
 		/// Final status of the system.
 		/// </summary>
-		public InitializationSystemStatus Status => _status;
+		public InitializationSystemStatus Status { get; }
 
 		/// <summary>
 		/// Offset from the start of the initialization run to the start of the system, in milliseconds.
 		/// </summary>
-		public double StartMilliseconds => _startMilliseconds;
+		public double StartMilliseconds { get; }
 
 		/// <summary>
 		/// Duration of the system initialization, in milliseconds.
 		/// </summary>
-		public double DurationMilliseconds => _durationMilliseconds;
+		public double DurationMilliseconds { get; }
 
 		/// <summary>
 		/// Indices, inside <see cref="InitializationGraphSnapshot.Systems"/>, of the systems this one depends on.
 		/// </summary>
-		public IReadOnlyList<int> DependencyIndices => _dependencyIndices ?? Array.Empty<int>();
+		public IReadOnlyList<int> DependencyIndices { get; }
 
 		/// <summary>
 		/// Text of the exception that failed the system, or an empty string when there was none.
 		/// </summary>
-		public string Error => _error ?? string.Empty;
+		public string Error { get; }
 
 		internal InitializationSystemRecord(
 			string typeName,
 			string fullTypeName,
-			int batchIndex,
 			int startOrder,
 			bool isCritical,
 			InitializationSystemStatus status,
@@ -85,16 +66,15 @@ namespace DTech.Pulse
 			int[] dependencyIndices,
 			string error)
 		{
-			_typeName = typeName;
-			_fullTypeName = fullTypeName;
-			_batchIndex = batchIndex;
-			_startOrder = startOrder;
-			_isCritical = isCritical;
-			_status = status;
-			_startMilliseconds = startMilliseconds;
-			_durationMilliseconds = durationMilliseconds;
-			_dependencyIndices = dependencyIndices;
-			_error = error;
+			TypeName = typeName;
+			FullTypeName = fullTypeName;
+			StartOrder = startOrder;
+			IsCritical = isCritical;
+			Status = status;
+			StartMilliseconds = startMilliseconds;
+			DurationMilliseconds = durationMilliseconds;
+			DependencyIndices = dependencyIndices ?? Array.Empty<int>();
+			Error = error ?? string.Empty;
 		}
 	}
 }

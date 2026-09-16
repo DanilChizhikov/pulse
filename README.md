@@ -22,6 +22,7 @@
   - [InitializationContextBuilder](#initializationcontextbuilder)
   - [InitializationContext](#initializationcontext)
   - [IInitializationNodeHandle](#initializationnodehandle)
+  - [IInitializationFramePacer](#iinitializationframepacer)
   - [InitializationGraphRecording](#initializationgraphrecording)
 - [Dependencies](#dependencies)
 - [License](#license)
@@ -44,9 +45,9 @@
     ```
 3. Unity will automatically import the package.
 
-If you want to set a target version, Pulse uses the `v*.*.*` release tag so you can specify a version like #v1.1.0.
+If you want to set a target version, Pulse uses the `v*.*.*` release tag so you can specify a version like #v2.0.0.
 
-For example `https://github.com/DanilChizhikov/pulse.git#v1.2.0`.
+For example `https://github.com/DanilChizhikov/pulse.git#v2.0.0`.
 
 ## Features
 - **Attribute–based dependency discovery**
@@ -59,10 +60,11 @@ For example `https://github.com/DanilChizhikov/pulse.git#v1.2.0`.
     It then builds a dependency graph and orders initialization accordingly.
 
 
-- **Deterministic, batched initialization**
+- **Dependency-driven scheduling**
 
-  Systems are initialized in topological order, grouped into batches.
-  All systems in the same batch are initialized in parallel (as `Task`s), and the next batch starts only after the current one is done.
+  Every system starts as soon as its own dependencies are initialized — nothing waits for unrelated systems.
+  Independent systems run in parallel (as `Task`s), so the duration of a run is the length of the critical path
+  instead of the sum of the slowest system of every dependency level.
 
 
 - **Strong validation of dependencies**
@@ -103,13 +105,20 @@ For example `https://github.com/DanilChizhikov/pulse.git#v1.2.0`.
   `InitializationContext.InitializationAsync` takes a `CancellationToken`.
 
   If the token is canceled:
-  - Pulse stops processing further batches;
-  - any already running tasks can respect the token and exit early.
+  - Pulse stops starting new systems;
+  - already running systems are awaited, and they can respect the token and exit early.
+
+
+- **Optional frame pacing**
+
+  Pass an `IInitializationFramePacer` to postpone the next system while the current frame is already too long.
+  `PlayerLoopFramePacer` is the built-in implementation: it hooks into the player loop (no `MonoBehaviour` involved)
+  and yields a frame whenever `Time.unscaledDeltaTime` exceeds the configured budget. Disabled unless a pacer is set.
 
 
 - **Initialization graph recording (opt-in)**
 
-  Record batches, dependencies, start order and timings of every system and inspect them in a GraphView window
+  Record dependencies, start order and timings of every system and inspect them in a GraphView window
   (`Window/DTech/Pulse/Initialization Graph`). Disabled by default, so it doesn't affect regular runs.
 
 ## Runtime compatibility
@@ -285,7 +294,7 @@ builder.AddSystem(db)
 ```
 
 ### Recording the initialization graph
-Pulse can record how an initialization actually went: batches, dependencies, start order, start offset, duration
+Pulse can record how an initialization actually went: dependencies, start order, start offset, duration
 and status of every system. Recording is **disabled by default** — when it is off, no recorder is created and regular
 runs are not affected.
 
@@ -294,39 +303,43 @@ runs are not affected.
 2. Enter Play Mode. Every time an `InitializationContext` finishes (completed, cancelled or failed), a snapshot is saved
    to `Library/Pulse/Graphs` (the last 20 snapshots are kept).
 3. Open `Window/DTech/Pulse/Initialization Graph` to browse snapshots:
-   - batches are shown as columns (groups) with their duration;
-   - edges go from a dependency to the systems that depend on it;
-   - each node shows start order, batch, start offset, duration and status;
+   - systems are grouped into columns by their dependency level, and the group title shows the span of the level;
+   - edges go from a dependency to the systems that depend on it. Edges already implied by another dependency
+     (`A → B → C` makes `A → C` redundant) are hidden; enable **All Edges** in the toolbar to draw them too;
+   - select one or more systems to see all of their direct edges; systems they are not linked to are dimmed;
+   - edges mirror the recorded dependencies and cannot be selected, deleted or reconnected;
+   - each node shows start order, level, start offset, duration and status; times below 500 ms are shown
+     in milliseconds, longer ones in seconds (`0.51 s`);
    - the node header goes from green (fast) to red (the slowest system); critical systems have a `CRITICAL` badge.
 
 **From code (e.g. in a player build)**
 ```csharp
 InitializationGraphRecording.IsEnabled = true; // must be set before builder.Build()
 
-string path = Path.Combine(Application.persistentDataPath, "pulse-graph.json");
+string path = Path.Combine(Application.persistentDataPath, "pulse-graph.xml");
 
 //Can be called from non-main thread
 InitializationGraphRecording.OnSnapshotRecorded += snapshot =>
 {
-    File.WriteAllText(path, snapshot.ToJson(true));
+    File.WriteAllText(path, snapshot.ToXml(true));
 };
 ```
-Copy the JSON to your machine and load it with **Open File...** in the Initialization Graph window.
+Copy the XML to your machine and load it with **Open File...** in the Initialization Graph window.
 
 **Getting the file off the device**
 
 Android (`persistentDataPath` is `/storage/emulated/0/Android/data/<package-name>/files`):
 ```bash
 adb shell run-as <package-name> ls files                       # sanity check for non-debuggable paths
-adb pull /storage/emulated/0/Android/data/<package-name>/files/pulse-graph.json .
+adb pull /storage/emulated/0/Android/data/<package-name>/files/pulse-graph.xml .
 ```
 For a non-debuggable release build the app-private path is not readable over `adb pull`; either use a debuggable
-build, or write the snapshot somewhere you can read (`adb shell run-as <package-name> cat files/pulse-graph.json > pulse-graph.json`).
+build, or write the snapshot somewhere you can read (`adb shell run-as <package-name> cat files/pulse-graph.xml > pulse-graph.xml`).
 
 iOS (`persistentDataPath` is `<app container>/Documents`):
 1. Xcode -> `Window/Devices and Simulators` -> select the device -> **Installed Apps** -> select the app.
 2. `...` (gear) -> **Download Container...** and save the `.xcappdata` bundle.
-3. Right-click the bundle -> **Show Package Contents** -> `AppData/Documents/pulse-graph.json`.
+3. Right-click the bundle -> **Show Package Contents** -> `AppData/Documents/pulse-graph.xml`.
 
 The app has to be installed with a development profile for **Download Container** to be available. If you want the
 file to show up in the Files app instead, enable `UIFileSharingEnabled` / `LSSupportsOpeningDocumentsInPlace` in
@@ -391,6 +404,7 @@ public sealed class InventorySystem : IInitializable
 public sealed class InitializationContextBuilder
 {
     public IInitializationNodeHandle AddSystem(IInitializable system);
+    public InitializationContextBuilder SetFramePacer(IInitializationFramePacer framePacer);
     public InitializationContext Build();
 }
 ```
@@ -416,8 +430,18 @@ builder.AddSystem(auth)
        .OnStartInitialize(type => Console.WriteLine($"Init {type.Name}..."));
 ```
 
+#### `SetFramePacer(IInitializationFramePacer framePacer)`
+Sets the pacer used to postpone systems while the current frame is overloaded. Pass `null` (the default) to
+initialize without any frame gate.
+
+**Example:**
+```csharp
+var builder = new InitializationContextBuilder();
+builder.SetFramePacer(new PlayerLoopFramePacer(maxFrameSeconds: 0.1f));
+```
+
 #### Build()
-Builds the dependency graph, creates batches, and returns an `InitializationContext`.
+Builds and validates the dependency graph and returns an `InitializationContext`.
 Validation performed during `Build()`:
 - **Missing dependencies**: if any system depends on a type that has no matching system registered, Build() throws an exception.
 - **Cyclic dependencies**: if a cycle is detected, `Build()` throws an exception with the list of involved systems.
@@ -468,11 +492,11 @@ context.OnCriticalSystemsInitialized += () =>
 
 #### InitializationAsync(CancellationToken token)
 Runs initialization:
-- Systems are executed in batches according to their dependencies.
-- Systems within the same batch are initialized in parallel using `Task.WhenAll`.
+- Every system starts as soon as its own dependencies are initialized; independent systems run in parallel.
+- If a system throws, no new system is started, the already running ones are awaited and the exception is rethrown.
 - If `token` is canceled:
-  - The method returns early after the current batch is done.
-  - Remaining batches are not processed.
+  - No new system is started.
+  - The already running systems are awaited and the method returns normally.
 
 **Example:**
 ```csharp
@@ -549,6 +573,33 @@ builder.AddSystem(db)
        .OnCompleteInitialize(type => Debug.Log($"Done: {type.Name}"));
 ```
 
+### IInitializationFramePacer
+```csharp
+public interface IInitializationFramePacer
+{
+    bool IsFrameOverloaded { get; }
+    Task WaitNextFrameAsync(CancellationToken token);
+}
+```
+Optional throttling hook. When a pacer is set through `InitializationContextBuilder.SetFramePacer`, Pulse asks it
+before the first system starts and after every system that has dependents: if `IsFrameOverloaded` is `true`,
+the next systems are postponed until `WaitNextFrameAsync` completes.
+
+Implementations must complete the returned task instead of throwing when the token is cancelled — the cancellation
+itself is handled by `InitializationContext`.
+
+`PlayerLoopFramePacer` is the built-in implementation:
+```csharp
+// 100 ms budget by default; create it on the main thread.
+var framePacer = new PlayerLoopFramePacer(maxFrameSeconds: 0.1f);
+builder.SetFramePacer(framePacer);
+// ...
+framePacer.Dispose(); // restores the original player loop; also happens on Application.quitting
+```
+It inserts its own `PlayerLoopSystem` into the `Update` phase on the first wait, so no `MonoBehaviour` is needed.
+Outside Play Mode (`Application.isPlaying == false`) it never waits, and `IsFrameOverloaded` reports `false`
+when queried from a thread other than the one it was created on.
+
 ### InitializationGraphRecording
 ```csharp
 public static class InitializationGraphRecording
@@ -568,11 +619,10 @@ In the Editor it is synced with the `Tools/DTech/Pulse/Record Initialization Gra
 Raised once per recorded `InitializationAsync` run with an `InitializationGraphSnapshot`:
 - `Status` — `Completed`, `Cancelled` or `Failed`;
 - `RecordedAtUtc`, `TotalMilliseconds`;
-- `Batches` — started batches with start offset and duration;
-- `Systems` — per system: `TypeName`, `FullTypeName`, `BatchIndex`, `StartOrder` (`-1` if not started), `IsCritical`,
+- `Systems` — per system: `TypeName`, `FullTypeName`, `StartOrder` (`-1` if not started), `IsCritical`,
   `Status`, `StartMilliseconds`, `DurationMilliseconds`, `DependencyIndices` (indices into `Systems`), `Error`.
 
-Use `snapshot.ToJson()` / `InitializationGraphSnapshot.FromJson(json)` to persist and restore snapshots.
+Use `snapshot.ToXml()` / `InitializationGraphSnapshot.FromXml(xml)` to persist and restore snapshots.
 
 ## Dependencies
 - [Performance Testing Package for Unity v3.2.0](https://docs.unity3d.com/Packages/com.unity.test-framework.performance@3.2/manual/index.html)

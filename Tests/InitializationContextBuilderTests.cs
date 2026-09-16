@@ -261,7 +261,7 @@ namespace DTech.Pulse.Tests
         }
 
         [Test]
-        public async Task Initialization_ShouldInvokeCriticalEvent_BeforeSlowNonCriticalInSameBatchCompletes()
+        public async Task Initialization_ShouldInvokeCriticalEvent_BeforeSlowNonCriticalCompletes()
         {
             var builder = new InitializationContextBuilder();
             var slowCompletion = new TaskCompletionSource<bool>();
@@ -293,6 +293,130 @@ namespace DTech.Pulse.Tests
 
             Assert.Throws<InvalidOperationException>(() =>
                 context.InitializationAsync(CancellationToken.None).GetAwaiter().GetResult());
+        }
+
+        [Test]
+        public async Task Initialization_ShouldNotBlockIndependentChain_OnSlowSystem()
+        {
+            var slowCompletion = new TaskCompletionSource<bool>();
+            var completedSystems = new List<Type>();
+            var builder = new InitializationContextBuilder();
+
+            builder.AddSystem(new SlowSystem(slowCompletion.Task));
+            builder.AddSystem(new DepA());
+            builder.AddSystem(new DepB()).AddDependency<DepA>();
+
+            InitializationContext context = builder.Build();
+            context.OnSystemInitializationCompleted += type => completedSystems.Add(type);
+
+            Task initialization = context.InitializationAsync(CancellationToken.None);
+
+            CollectionAssert.Contains(completedSystems, typeof(DepB),
+                "A dependent system must not wait for an unrelated slow system.");
+            Assert.IsFalse(initialization.IsCompleted, "The run must still wait for the slow system.");
+
+            slowCompletion.SetResult(true);
+            await initialization;
+
+            Assert.AreEqual(3, context.InitializedSystemsCount);
+        }
+
+        [Test]
+        public async Task Initialization_ShouldStartDependent_AsSoonAsItsOwnDependenciesComplete()
+        {
+            var slowCompletion = new TaskCompletionSource<bool>();
+            var startedSystems = new List<Type>();
+            var builder = new InitializationContextBuilder();
+
+            builder.AddSystem(new DepA());
+            builder.AddSystem(new SlowSystem(slowCompletion.Task));
+            builder.AddSystem(new DepB()).AddDependency<DepA>();
+            builder.AddSystem(new DummySystem()).AddDependency<SlowSystem>();
+
+            InitializationContext context = builder.Build();
+            context.OnSystemInitializationBegan += type => startedSystems.Add(type);
+
+            Task initialization = context.InitializationAsync(CancellationToken.None);
+
+            CollectionAssert.Contains(startedSystems, typeof(DepB),
+                "A dependent of a fast system must start before an unrelated slow system completes.");
+            CollectionAssert.DoesNotContain(startedSystems, typeof(DummySystem),
+                "A dependent of the slow system must not start before it completes.");
+
+            slowCompletion.SetResult(true);
+            await initialization;
+
+            CollectionAssert.Contains(startedSystems, typeof(DummySystem));
+            Assert.AreEqual(4, context.InitializedSystemsCount);
+        }
+
+        [Test]
+        public async Task Initialization_ShouldDeferStart_WhenFramePacerReportsOverloadedFrame()
+        {
+            var framePacer = new FakeFramePacer { IsFrameOverloaded = true };
+            var builder = new InitializationContextBuilder();
+            builder.AddSystem(new DummySystem());
+
+            InitializationContext context = builder.SetFramePacer(framePacer).Build();
+
+            Task initialization = context.InitializationAsync(CancellationToken.None);
+
+            Assert.AreEqual(1, framePacer.PendingWaitsCount, "The pacer must be asked to wait for the next frame.");
+            Assert.IsFalse(initialization.IsCompleted, "The run must wait for the next frame.");
+            Assert.AreEqual(0, context.InitializedSystemsCount, "No system may start on an overloaded frame.");
+
+            framePacer.CompletePendingWaits();
+            await initialization;
+
+            Assert.AreEqual(1, context.InitializedSystemsCount);
+        }
+
+        [Test]
+        public async Task Initialization_ShouldNotUseFramePacer_WhenFrameIsNotOverloaded()
+        {
+            var framePacer = new FakeFramePacer { IsFrameOverloaded = false };
+            var builder = new InitializationContextBuilder();
+            builder.AddSystem(new DepA());
+            builder.AddSystem(new DepB()).AddDependency<DepA>();
+
+            InitializationContext context = builder.SetFramePacer(framePacer).Build();
+
+            await context.InitializationAsync(CancellationToken.None);
+
+            Assert.AreEqual(0, framePacer.TotalWaitsCount);
+            Assert.AreEqual(2, context.InitializedSystemsCount);
+        }
+
+        [Test]
+        public async Task Initialization_ShouldComplete_WhenNoSystemsRegistered()
+        {
+            InitializationContext context = new InitializationContextBuilder().Build();
+
+            await context.InitializationAsync(CancellationToken.None);
+
+            Assert.AreEqual(0, context.TotalSystemsCount);
+            Assert.AreEqual(0, context.InitializedSystemsCount);
+        }
+
+        [Test]
+        public void Initialization_ShouldStopStartingSystems_AfterFailure()
+        {
+            var startedSystems = new List<Type>();
+            var builder = new InitializationContextBuilder();
+
+            builder.AddSystem(new ThrowingSystem());
+            builder.AddSystem(new DepA());
+            builder.AddSystem(new DepB()).AddDependency<DepA>();
+
+            InitializationContext context = builder.Build();
+            context.OnSystemInitializationBegan += type => startedSystems.Add(type);
+
+            var exception = Assert.Throws<InvalidOperationException>(() =>
+                context.InitializationAsync(CancellationToken.None).GetAwaiter().GetResult());
+            StringAssert.Contains(ThrowingSystem.ErrorMessage, exception!.Message);
+
+            CollectionAssert.DoesNotContain(startedSystems, typeof(DepB),
+                "No system may be started after a failure.");
         }
 
         [Test]
@@ -448,6 +572,43 @@ namespace DTech.Pulse.Tests
             }
 
             public Task InitializeAsync(CancellationToken token) => _task;
+        }
+
+        private sealed class ThrowingSystem : IInitializable
+        {
+            public const string ErrorMessage = "Throwing system error.";
+
+            public Task InitializeAsync(CancellationToken token) =>
+                Task.FromException(new InvalidOperationException(ErrorMessage));
+        }
+
+        private sealed class FakeFramePacer : IInitializationFramePacer
+        {
+            private readonly List<TaskCompletionSource<bool>> _pendingWaits = new();
+
+            public bool IsFrameOverloaded { get; set; }
+
+            public int PendingWaitsCount => _pendingWaits.Count;
+
+            public int TotalWaitsCount { get; private set; }
+
+            public Task WaitNextFrameAsync(CancellationToken token)
+            {
+                TotalWaitsCount++;
+                var completionSource = new TaskCompletionSource<bool>();
+                _pendingWaits.Add(completionSource);
+                return completionSource.Task;
+            }
+
+            public void CompletePendingWaits()
+            {
+                var pendingWaits = new List<TaskCompletionSource<bool>>(_pendingWaits);
+                _pendingWaits.Clear();
+                for (int i = 0; i < pendingWaits.Count; i++)
+                {
+                    pendingWaits[i].TrySetResult(true);
+                }
+            }
         }
     }
 }

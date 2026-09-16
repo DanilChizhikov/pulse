@@ -10,40 +10,28 @@ namespace DTech.Pulse
 	[Preserve]
 	internal sealed class InitializationGraphRecorder
 	{
-		private readonly Dictionary<InitializationNode, int> _indices;
 		private readonly SystemEntry[] _systems;
-		private readonly BatchEntry[] _batches;
 
 		private long _startTimestamp;
 		private int _startedSystemsCount;
 
-		internal InitializationGraphRecorder(
-			IReadOnlyList<ICollection<InitializationNode>> batches,
-			IReadOnlyDictionary<InitializationNode, List<InitializationNode>> dependents)
+		internal InitializationGraphRecorder(InitializationNode[] nodes, int[][] dependents)
 		{
-			_indices = new Dictionary<InitializationNode, int>();
-			var systems = new List<SystemEntry>();
-			for (int batchIndex = 0; batchIndex < batches.Count; batchIndex++)
+			_systems = new SystemEntry[nodes.Length];
+			for (int i = 0; i < nodes.Length; i++)
 			{
-				foreach (InitializationNode node in batches[batchIndex])
-				{
-					_indices.Add(node, systems.Count);
-					systems.Add(new SystemEntry(node, batchIndex));
-				}
+				_systems[i] = new SystemEntry(nodes[i]);
 			}
 
-			_systems = systems.ToArray();
-			_batches = new BatchEntry[batches.Count];
-
-			foreach (KeyValuePair<InitializationNode, List<InitializationNode>> pair in dependents)
+			for (int i = 0; i < dependents.Length; i++)
 			{
-				int dependencyIndex = _indices[pair.Key];
-				foreach (InitializationNode dependent in pair.Value)
+				int[] nodeDependents = dependents[i];
+				for (int j = 0; j < nodeDependents.Length; j++)
 				{
-					List<int> dependencyIndices = _systems[_indices[dependent]].DependencyIndices;
-					if (!dependencyIndices.Contains(dependencyIndex))
+					List<int> dependencyIndices = _systems[nodeDependents[j]].DependencyIndices;
+					if (!dependencyIndices.Contains(i))
 					{
-						dependencyIndices.Add(dependencyIndex);
+						dependencyIndices.Add(i);
 					}
 				}
 			}
@@ -54,41 +42,29 @@ namespace DTech.Pulse
 			}
 		}
 
-		internal void Begin()
+		public void Begin()
 		{
 			_startTimestamp = Stopwatch.GetTimestamp();
 		}
 
-		internal void MarkBatchStarted(int batchIndex)
+		public void MarkSystemStarted(int index)
 		{
-			_batches[batchIndex].StartTimestamp = Stopwatch.GetTimestamp();
-			_batches[batchIndex].IsStarted = true;
-		}
-
-		internal void MarkBatchCompleted(int batchIndex)
-		{
-			_batches[batchIndex].EndTimestamp = Stopwatch.GetTimestamp();
-			_batches[batchIndex].IsCompleted = true;
-		}
-
-		internal void MarkSystemStarted(InitializationNode node)
-		{
-			SystemEntry system = _systems[_indices[node]];
+			SystemEntry system = _systems[index];
 			system.StartOrder = Interlocked.Increment(ref _startedSystemsCount) - 1;
 			system.StartTimestamp = Stopwatch.GetTimestamp();
 		}
 
-		internal void MarkSystemCompleted(InitializationNode node)
+		public void MarkSystemCompleted(int index)
 		{
-			SystemEntry system = _systems[_indices[node]];
+			SystemEntry system = _systems[index];
 			system.EndTimestamp = Stopwatch.GetTimestamp();
 			system.IsFinished = true;
 			system.Status = InitializationSystemStatus.Completed;
 		}
 
-		internal void MarkSystemFailed(InitializationNode node, Exception exception)
+		public void MarkSystemFailed(int index, Exception exception)
 		{
-			SystemEntry system = _systems[_indices[node]];
+			SystemEntry system = _systems[index];
 			system.EndTimestamp = Stopwatch.GetTimestamp();
 			system.IsFinished = true;
 			system.Status = exception is OperationCanceledException
@@ -97,25 +73,9 @@ namespace DTech.Pulse
 			system.Error = $"{exception.GetType().Name}: {exception.Message}";
 		}
 
-		internal void Complete(InitializationGraphStatus status)
+		public void Complete(InitializationGraphStatus status)
 		{
 			long endTimestamp = Stopwatch.GetTimestamp();
-
-			var batches = new List<InitializationBatchRecord>(_batches.Length);
-			for (int i = 0; i < _batches.Length; i++)
-			{
-				BatchEntry batch = _batches[i];
-				if (!batch.IsStarted)
-				{
-					continue;
-				}
-
-				long batchEndTimestamp = batch.IsCompleted ? batch.EndTimestamp : endTimestamp;
-				batches.Add(new InitializationBatchRecord(
-					i,
-					ToMilliseconds(batch.StartTimestamp - _startTimestamp),
-					ToMilliseconds(batchEndTimestamp - batch.StartTimestamp)));
-			}
 
 			var systems = new List<InitializationSystemRecord>(_systems.Length);
 			foreach (SystemEntry system in _systems)
@@ -125,7 +85,6 @@ namespace DTech.Pulse
 				systems.Add(new InitializationSystemRecord(
 					system.TypeName,
 					system.FullTypeName,
-					system.BatchIndex,
 					system.StartOrder,
 					system.IsCritical,
 					system.Status,
@@ -139,7 +98,6 @@ namespace DTech.Pulse
 				DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture),
 				status,
 				ToMilliseconds(endTimestamp - _startTimestamp),
-				batches,
 				systems);
 
 			InitializationGraphRecording.Publish(snapshot);
@@ -150,34 +108,24 @@ namespace DTech.Pulse
 			return timestampDelta * 1000d / Stopwatch.Frequency;
 		}
 
-		private struct BatchEntry
-		{
-			public long StartTimestamp;
-			public long EndTimestamp;
-			public bool IsStarted;
-			public bool IsCompleted;
-		}
-
 		private sealed class SystemEntry
 		{
-			public readonly string TypeName;
-			public readonly string FullTypeName;
-			public readonly int BatchIndex;
-			public readonly bool IsCritical;
-			public readonly List<int> DependencyIndices = new();
+			public string TypeName { get; }
+			public string FullTypeName { get; }
+			public bool IsCritical { get; }
+			public List<int> DependencyIndices { get; } = new();
 
-			public int StartOrder = -1;
-			public long StartTimestamp;
-			public long EndTimestamp;
-			public bool IsFinished;
-			public InitializationSystemStatus Status = InitializationSystemStatus.NotStarted;
-			public string Error = string.Empty;
+			public int StartOrder { get; set; } = -1;
+			public long StartTimestamp { get; set; }
+			public long EndTimestamp { get; set; }
+			public bool IsFinished { get; set; }
+			public InitializationSystemStatus Status { get; set; } = InitializationSystemStatus.NotStarted;
+			public string Error { get; set; } = string.Empty;
 
-			public SystemEntry(InitializationNode node, int batchIndex)
+			public SystemEntry(InitializationNode node)
 			{
 				TypeName = node.SystemType.Name;
 				FullTypeName = node.SystemType.FullName;
-				BatchIndex = batchIndex;
 				IsCritical = node.IsCritical;
 			}
 		}

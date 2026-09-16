@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine.Scripting;
@@ -11,8 +10,9 @@ namespace DTech.Pulse
 	/// Ready-to-run initialization plan built by <see cref="InitializationContextBuilder"/>.
 	/// </summary>
 	/// <remarks>
-	/// Systems are grouped into batches by their dependencies; systems inside one batch run in parallel,
-	/// and batches run one after another. A context can be executed only once.
+	/// Scheduling is dependency-driven: every system starts as soon as its own dependencies are initialized,
+	/// so an unrelated slow system never holds the rest of the graph back. The duration of a run is therefore
+	/// the length of the critical path. A context can be executed only once.
 	/// </remarks>
 	[Preserve]
 	public sealed class InitializationContext
@@ -32,12 +32,14 @@ namespace DTech.Pulse
 		/// </summary>
 		public event Action OnCriticalSystemsInitialized;
 
-		private readonly object _criticalSystemsLock = new();
+		private readonly object _gate = new();
 
-		private readonly List<ICollection<InitializationNode>> _batches;
-		private readonly HashSet<InitializationNode> _criticalSystems;
-		private readonly List<InitializationNode> _nodes;
+		private readonly InitializationNode[] _nodes;
+		private readonly int[] _blockingDependencies;
+		private readonly int[][] _dependents;
+		private readonly bool[] _startedSystems;
 		private readonly InitializationGraphRecorder _graphRecorder;
+		private readonly IInitializationFramePacer _framePacer;
 
 		/// <summary>
 		/// Total number of systems in this context.
@@ -59,28 +61,44 @@ namespace DTech.Pulse
 		/// </summary>
 		public int InitializedCriticalSystemsCount { get; private set; }
 
+		private TaskCompletionSource<bool> _completionSource;
+		private Exception _failure;
+		private int _remainingCriticalSystemsCount;
+		private int _runningSystemsCount;
+		private int _completedSystemsCount;
 		private bool _isInitializationStarted;
+		private bool _isFailed;
+		private bool _isCancelled;
 		private bool _isCriticalSystemsInitializedEventInvoked;
 
 		internal InitializationContext(
-			List<ICollection<InitializationNode>> batches,
-			IEnumerable<InitializationNode> criticalSystems,
-			IEnumerable<InitializationNode> nodes,
-			InitializationGraphRecorder graphRecorder)
+			InitializationNode[] nodes,
+			int[] blockingDependencies,
+			int[][] dependents,
+			int criticalSystemsCount,
+			InitializationGraphRecorder graphRecorder,
+			IInitializationFramePacer framePacer)
 		{
-			_batches = batches;
-			_criticalSystems = new HashSet<InitializationNode>(criticalSystems);
-			_nodes = new List<InitializationNode>(nodes);
+			_nodes = nodes;
+			_blockingDependencies = blockingDependencies;
+			_dependents = dependents;
+			_startedSystems = new bool[nodes.Length];
 			_graphRecorder = graphRecorder;
-			TotalSystemsCount = _nodes.Count;
-			TotalCriticalSystemsCount = _criticalSystems.Count;
+			_framePacer = framePacer;
+			TotalSystemsCount = nodes.Length;
+			TotalCriticalSystemsCount = criticalSystemsCount;
 			InitializedSystemsCount = 0;
+			InitializedCriticalSystemsCount = 0;
+			_remainingCriticalSystemsCount = criticalSystemsCount;
 		}
 
 		/// <summary>
-		/// Runs the initialization, batch by batch, until every system is initialized.
+		/// Runs the initialization until every system is initialized.
 		/// </summary>
-		/// <param name="token">Token used to cancel the initialization between batches.</param>
+		/// <param name="token">
+		/// Token used to cancel the initialization. Once it is cancelled no new system is started, the already
+		/// running ones are awaited and the method returns normally.
+		/// </param>
 		/// <returns>A task that completes when all systems are initialized or the operation is cancelled.</returns>
 		/// <exception cref="InvalidOperationException">Thrown when the context has already been run.</exception>
 		public async Task InitializationAsync(CancellationToken token)
@@ -91,28 +109,21 @@ namespace DTech.Pulse
 			}
 
 			_isInitializationStarted = true;
+			_completionSource = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
 			var graphStatus = InitializationGraphStatus.Failed;
 			_graphRecorder?.Begin();
 			try
 			{
-				for (int i = 0; i < _batches.Count; i++)
-				{
-					IEnumerable<Task> tasks = _batches[i].Select(node => InitializeNodeAsync(node, token));
+				await WaitFrameIfOverloadedAsync(token);
+				StartReadySystems(token);
+				await _completionSource.Task;
 
-					_graphRecorder?.MarkBatchStarted(i);
-					await Task.WhenAll(tasks);
-					_graphRecorder?.MarkBatchCompleted(i);
-					if (token.IsCancellationRequested)
-					{
-						graphStatus = InitializationGraphStatus.Cancelled;
-						return;
-					}
-				}
-
-				graphStatus = InitializationGraphStatus.Completed;
+				graphStatus = _isCancelled || token.IsCancellationRequested
+					? InitializationGraphStatus.Cancelled
+					: InitializationGraphStatus.Completed;
 			}
-			catch (OperationCanceledException) when (_graphRecorder != null)
+			catch (OperationCanceledException)
 			{
 				graphStatus = InitializationGraphStatus.Cancelled;
 				throw;
@@ -122,59 +133,195 @@ namespace DTech.Pulse
 				_graphRecorder?.Complete(graphStatus);
 			}
 
-			_nodes.Clear();
-			_batches.Clear();
-			_criticalSystems.Clear();
+			if (graphStatus == InitializationGraphStatus.Completed)
+			{
+				Array.Clear(_nodes, 0, _nodes.Length);
+			}
 		}
 
-		private void RemoveCriticalSystem(InitializationNode node)
+		private void StartReadySystems(CancellationToken token)
+		{
+			List<int> readySystems = null;
+			lock (_gate)
+			{
+				for (int i = 0; i < _nodes.Length; i++)
+				{
+					if (_blockingDependencies[i] != 0 || !TryReserveSystem(i, token))
+					{
+						continue;
+					}
+
+					(readySystems ??= new List<int>()).Add(i);
+				}
+			}
+
+			RunSystems(readySystems, token);
+		}
+
+		private void UnlockDependents(int index, CancellationToken token)
+		{
+			int[] dependents = _dependents[index];
+			if (dependents.Length == 0)
+			{
+				return;
+			}
+
+			List<int> readySystems = null;
+			lock (_gate)
+			{
+				for (int i = 0; i < dependents.Length; i++)
+				{
+					int dependentIndex = dependents[i];
+					if (--_blockingDependencies[dependentIndex] != 0 || !TryReserveSystem(dependentIndex, token))
+					{
+						continue;
+					}
+
+					(readySystems ??= new List<int>()).Add(dependentIndex);
+				}
+			}
+
+			RunSystems(readySystems, token);
+		}
+
+		private void RunSystems(List<int> systems, CancellationToken token)
+		{
+			if (systems != null)
+			{
+				for (int i = 0; i < systems.Count; i++)
+				{
+					_ = InitializeSystemAsync(systems[i], token);
+				}
+			}
+
+			TryCompleteInitialization();
+		}
+
+		private async Task InitializeSystemAsync(int index, CancellationToken token)
+		{
+			InitializationNode node = _nodes[index];
+			try
+			{
+				_graphRecorder?.MarkSystemStarted(index);
+				await node.InitializeAsync(token, SystemBeginInitializationCallback, SystemInitializationCompleteCallback);
+				_graphRecorder?.MarkSystemCompleted(index);
+
+				bool shouldInvokeCriticalSystemsEvent;
+				lock (_gate)
+				{
+					_completedSystemsCount++;
+					InitializedSystemsCount++;
+					shouldInvokeCriticalSystemsEvent = TryConsumeCriticalSystem(node);
+				}
+
+				if (shouldInvokeCriticalSystemsEvent)
+				{
+					OnCriticalSystemsInitialized?.Invoke();
+				}
+
+				if (_dependents[index].Length > 0)
+				{
+					await WaitFrameIfOverloadedAsync(token);
+					UnlockDependents(index, token);
+				}
+			}
+			catch (Exception exception)
+			{
+				_graphRecorder?.MarkSystemFailed(index, exception);
+				lock (_gate)
+				{
+					if (exception is OperationCanceledException)
+					{
+						_isCancelled = true;
+					}
+					else
+					{
+						_isFailed = true;
+					}
+
+					_failure ??= exception;
+				}
+			}
+			finally
+			{
+				lock (_gate)
+				{
+					_runningSystemsCount--;
+				}
+
+				TryCompleteInitialization();
+			}
+		}
+
+		private void TryCompleteInitialization()
+		{
+			bool isCompleted;
+			Exception failure;
+			lock (_gate)
+			{
+				isCompleted = _completedSystemsCount == _nodes.Length ||
+					((_isFailed || _isCancelled) && _runningSystemsCount == 0);
+				failure = _failure;
+			}
+
+			if (!isCompleted)
+			{
+				return;
+			}
+
+			if (failure != null)
+			{
+				_completionSource.TrySetException(failure);
+				return;
+			}
+
+			_completionSource.TrySetResult(true);
+		}
+
+		private Task WaitFrameIfOverloadedAsync(CancellationToken token)
+		{
+			if (_framePacer == null || !_framePacer.IsFrameOverloaded)
+			{
+				return Task.CompletedTask;
+			}
+
+			return _framePacer.WaitNextFrameAsync(token) ?? Task.CompletedTask;
+		}
+
+		private bool TryReserveSystem(int index, CancellationToken token)
+		{
+			if (_isFailed || _isCancelled || _startedSystems[index])
+			{
+				return false;
+			}
+
+			if (token.IsCancellationRequested)
+			{
+				_isCancelled = true;
+				return false;
+			}
+
+			_startedSystems[index] = true;
+			_runningSystemsCount++;
+			return true;
+		}
+
+		private bool TryConsumeCriticalSystem(InitializationNode node)
 		{
 			if (!node.IsCritical)
 			{
-				return;
+				return false;
 			}
 
-			bool shouldInvokeEvent = false;
-			lock (_criticalSystemsLock)
-			{
-				if (!_criticalSystems.Remove(node))
-				{
-					throw new InvalidOperationException("This critical dependence was not taken into account." +
-						"Critical dependencies must be added before initialization begins.");
-				}
-
-				if (_criticalSystems.Count == 0 && !_isCriticalSystemsInitializedEventInvoked)
-				{
-					_isCriticalSystemsInitializedEventInvoked = true;
-					shouldInvokeEvent = true;
-				}
-			}
-
+			_remainingCriticalSystemsCount--;
 			InitializedCriticalSystemsCount++;
-			if (!shouldInvokeEvent)
+			if (_remainingCriticalSystemsCount != 0 || _isCriticalSystemsInitializedEventInvoked)
 			{
-				return;
+				return false;
 			}
 
-			OnCriticalSystemsInitialized?.Invoke();
-		}
-
-		private async Task InitializeNodeAsync(InitializationNode node, CancellationToken token)
-		{
-			_graphRecorder?.MarkSystemStarted(node);
-			try
-			{
-				await node.InitializeAsync(token, SystemBeginInitializationCallback, SystemInitializationCompleteCallback);
-			}
-			catch (Exception exception) when (_graphRecorder != null)
-			{
-				_graphRecorder.MarkSystemFailed(node, exception);
-				throw;
-			}
-
-			_graphRecorder?.MarkSystemCompleted(node);
-			InitializedSystemsCount++;
-			RemoveCriticalSystem(node);
+			_isCriticalSystemsInitializedEventInvoked = true;
+			return true;
 		}
 
 		private void SystemBeginInitializationCallback(Type systemType)

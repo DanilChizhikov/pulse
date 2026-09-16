@@ -9,7 +9,7 @@ namespace DTech.Pulse
 	public enum InitializationGraphStatus
 	{
 		/// <summary>
-		/// Every batch was initialized successfully.
+		/// Every system was initialized successfully.
 		/// </summary>
 		Completed = 0,
 

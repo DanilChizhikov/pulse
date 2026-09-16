@@ -19,7 +19,10 @@ namespace DTech.Pulse.Editor
 		public Port Input { get; }
 		public Port Output { get; }
 
-		public InitializationSystemNode(InitializationSystemRecord record, double maxDurationMilliseconds)
+		public InitializationSystemNode(
+			InitializationSystemRecord record,
+			int level,
+			double maxDurationMilliseconds)
 		{
 			title = record.TypeName;
 			tooltip = string.IsNullOrEmpty(record.Error) ? record.FullTypeName : $"{record.FullTypeName}\n{record.Error}";
@@ -36,7 +39,7 @@ namespace DTech.Pulse.Editor
 				titleButtonContainer.Insert(0, CreateCriticalBadge());
 			}
 
-			extensionContainer.Add(CreateDetails(record));
+			extensionContainer.Add(CreateDetails(record, level));
 			titleContainer.style.backgroundColor = GetTitleColor(record, maxDurationMilliseconds);
 			ApplyStatusBorder(record.Status);
 
@@ -86,7 +89,7 @@ namespace DTech.Pulse.Editor
 			borderStyle.borderBottomWidth = StatusBorderWidth;
 		}
 
-		private static VisualElement CreateDetails(InitializationSystemRecord record)
+		private static VisualElement CreateDetails(InitializationSystemRecord record, int level)
 		{
 			var details = new VisualElement();
 			details.style.paddingLeft = 8f;
@@ -95,9 +98,9 @@ namespace DTech.Pulse.Editor
 			details.style.paddingBottom = 6f;
 
 			string order = record.StartOrder >= 0 ? $"#{record.StartOrder + 1}" : "Not started";
-			details.Add(new Label($"{order} · Batch {record.BatchIndex}"));
-			details.Add(new Label($"Start: +{record.StartMilliseconds:0.##} ms"));
-			details.Add(new Label($"Duration: {record.DurationMilliseconds:0.##} ms"));
+			details.Add(new Label($"{order} · Level {level}"));
+			details.Add(new Label($"Start: +{InitializationTimeFormat.Format(record.StartMilliseconds)}"));
+			details.Add(new Label($"Duration: {InitializationTimeFormat.Format(record.DurationMilliseconds)}"));
 			details.Add(new Label($"Status: {record.Status}"));
 			return details;
 		}
