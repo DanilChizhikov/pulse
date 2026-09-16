@@ -316,30 +316,30 @@ runs are not affected.
 ```csharp
 InitializationGraphRecording.IsEnabled = true; // must be set before builder.Build()
 
-string path = Path.Combine(Application.persistentDataPath, "pulse-graph.json");
+string path = Path.Combine(Application.persistentDataPath, "pulse-graph.xml");
 
 //Can be called from non-main thread
 InitializationGraphRecording.OnSnapshotRecorded += snapshot =>
 {
-    File.WriteAllText(path, snapshot.ToJson(true));
+    File.WriteAllText(path, snapshot.ToXml(true));
 };
 ```
-Copy the JSON to your machine and load it with **Open File...** in the Initialization Graph window.
+Copy the XML to your machine and load it with **Open File...** in the Initialization Graph window.
 
 **Getting the file off the device**
 
 Android (`persistentDataPath` is `/storage/emulated/0/Android/data/<package-name>/files`):
 ```bash
 adb shell run-as <package-name> ls files                       # sanity check for non-debuggable paths
-adb pull /storage/emulated/0/Android/data/<package-name>/files/pulse-graph.json .
+adb pull /storage/emulated/0/Android/data/<package-name>/files/pulse-graph.xml .
 ```
 For a non-debuggable release build the app-private path is not readable over `adb pull`; either use a debuggable
-build, or write the snapshot somewhere you can read (`adb shell run-as <package-name> cat files/pulse-graph.json > pulse-graph.json`).
+build, or write the snapshot somewhere you can read (`adb shell run-as <package-name> cat files/pulse-graph.xml > pulse-graph.xml`).
 
 iOS (`persistentDataPath` is `<app container>/Documents`):
 1. Xcode -> `Window/Devices and Simulators` -> select the device -> **Installed Apps** -> select the app.
 2. `...` (gear) -> **Download Container...** and save the `.xcappdata` bundle.
-3. Right-click the bundle -> **Show Package Contents** -> `AppData/Documents/pulse-graph.json`.
+3. Right-click the bundle -> **Show Package Contents** -> `AppData/Documents/pulse-graph.xml`.
 
 The app has to be installed with a development profile for **Download Container** to be available. If you want the
 file to show up in the Files app instead, enable `UIFileSharingEnabled` / `LSSupportsOpeningDocumentsInPlace` in
@@ -622,7 +622,7 @@ Raised once per recorded `InitializationAsync` run with an `InitializationGraphS
 - `Systems` — per system: `TypeName`, `FullTypeName`, `StartOrder` (`-1` if not started), `IsCritical`,
   `Status`, `StartMilliseconds`, `DurationMilliseconds`, `DependencyIndices` (indices into `Systems`), `Error`.
 
-Use `snapshot.ToJson()` / `InitializationGraphSnapshot.FromJson(json)` to persist and restore snapshots.
+Use `snapshot.ToXml()` / `InitializationGraphSnapshot.FromXml(xml)` to persist and restore snapshots.
 
 ## Dependencies
 - [Performance Testing Package for Unity v3.2.0](https://docs.unity3d.com/Packages/com.unity.test-framework.performance@3.2/manual/index.html)
