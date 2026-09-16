@@ -304,8 +304,12 @@ runs are not affected.
    to `Library/Pulse/Graphs` (the last 20 snapshots are kept).
 3. Open `Window/DTech/Pulse/Initialization Graph` to browse snapshots:
    - systems are grouped into columns by their dependency level, and the group title shows the span of the level;
-   - edges go from a dependency to the systems that depend on it;
-   - each node shows start order, level, start offset, duration and status;
+   - edges go from a dependency to the systems that depend on it. Edges already implied by another dependency
+     (`A → B → C` makes `A → C` redundant) are hidden; enable **All Edges** in the toolbar to draw them too;
+   - select one or more systems to see all of their direct edges; systems they are not linked to are dimmed;
+   - edges mirror the recorded dependencies and cannot be selected, deleted or reconnected;
+   - each node shows start order, level, start offset, duration and status; times below 500 ms are shown
+     in milliseconds, longer ones in seconds (`0.51 s`);
    - the node header goes from green (fast) to red (the slowest system); critical systems have a `CRITICAL` badge.
 
 **From code (e.g. in a player build)**

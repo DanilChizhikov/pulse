@@ -10,6 +10,9 @@
   already running systems are awaited.
 - Initialization bookkeeping (progress counters, critical systems, completion) is now fully synchronized,
   so systems completing on background threads cannot corrupt the counters.
+- Initialization Graph window: edges implied by another dependency are hidden unless **All Edges** is enabled;
+  selecting systems draws all of their direct edges and dims the systems they are not linked to.
+- Initialization Graph window: timings from 500 ms on are shown in seconds (`10.5 s` instead of `10500 ms`).
 
 ### Added
 - `IInitializationFramePacer` and `InitializationContextBuilder.SetFramePacer` — optional frame gate that
@@ -20,6 +23,9 @@
 - `InitializationBatchRecord`, `InitializationGraphSnapshot.Batches` and `InitializationSystemRecord.BatchIndex`:
   batches no longer exist at runtime. The graph window derives dependency levels from `DependencyIndices`.
   Snapshots serialized by 1.x cannot be restored with `InitializationGraphSnapshot.FromJson`.
+
+### Fixed
+- Initialization Graph window: edges could be detached, deleted or reconnected with the mouse.
 
 ## [1.2.0] - 2026-09-15
 
