@@ -1,6 +1,8 @@
 # Pulse
 [![Unity Version](https://img.shields.io/badge/unity-6000.0+-000.svg)](https://unity3d.com/get-unity/download/archive)
 ![Unity Tests](https://github.com/DanilChizhikov/pulse/actions/workflows/tests.yml/badge.svg?branch=master)
+[![openupm](https://img.shields.io/npm/v/com.dtech.pulse?label=openupm&registry_uri=https://package.openupm.com)](https://openupm.com/packages/com.dtech.pulse/)
+[![openupm](https://img.shields.io/badge/dynamic/json?color=brightgreen&label=downloads&query=%24.downloads&suffix=%2Fmonth&url=https%3A%2F%2Fpackage.openupm.com%2Fdownloads%2Fpoint%2Flast-month%2Fcom.dtech.pulse)](https://openupm.com/packages/com.dtech.pulse/)
 
 ## Table of Contents
 - [Getting Started](#getting-started)
@@ -45,9 +47,9 @@
     ```
 3. Unity will automatically import the package.
 
-If you want to set a target version, Pulse uses the `v*.*.*` release tag so you can specify a version like #v2.0.0.
+If you want to set a target version, Pulse uses the `v*.*.*` release tag so you can specify a version like #v2.1.0.
 
-For example `https://github.com/DanilChizhikov/pulse.git#v2.0.0`.
+For example `https://github.com/DanilChizhikov/pulse.git#v2.1.0`.
 
 ## Features
 - **Attribute–based dependency discovery**
