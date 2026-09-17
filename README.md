@@ -122,6 +122,7 @@ For example `https://github.com/DanilChizhikov/pulse.git#v2.1.0`.
 
   Record dependencies, start order and timings of every system and inspect them in a GraphView window
   (`Window/DTech/Pulse/Initialization Graph`). Disabled by default, so it doesn't affect regular runs.
+  Graphs recorded in a development build are read straight from the connected player over the player connection.
 
 ## Runtime compatibility
 
@@ -300,7 +301,7 @@ Pulse can record how an initialization actually went: dependencies, start order,
 and status of every system. Recording is **disabled by default** — when it is off, no recorder is created and regular
 runs are not affected.
 
-**In the Editor**
+**In the Editor** (`Source: Editor` in the window toolbar)
 1. Enable `Tools/DTech/Pulse/Record Initialization Graph` (stored in `EditorPrefs`).
 2. Enter Play Mode. Every time an `InitializationContext` finishes (completed, cancelled or failed), a snapshot is saved
    to `Library/Pulse/Graphs` (the last 20 snapshots are kept).
@@ -314,42 +315,36 @@ runs are not affected.
      in milliseconds, longer ones in seconds (`0.51 s`);
    - the node header goes from green (fast) to red (the slowest system); critical systems have a `CRITICAL` badge.
 
-**From code (e.g. in a player build)**
-```csharp
-InitializationGraphRecording.IsEnabled = true; // must be set before builder.Build()
+**On a device** (`Source: Device` in the window toolbar)
 
-string path = Path.Combine(Application.persistentDataPath, "pulse-graph.xml");
+A development build sends every recorded snapshot straight to the Editor over the
+[player connection](https://docs.unity3d.com/6000.0/Documentation/ScriptReference/Networking.PlayerConnection.PlayerConnection.html) —
+no files are written on the device and nothing has to be pulled off it.
 
-//Can be called from non-main thread
-InitializationGraphRecording.OnSnapshotRecorded += snapshot =>
-{
-    File.WriteAllText(path, snapshot.ToXml(true));
-};
-```
-Copy the XML to your machine and load it with **Open File...** in the Initialization Graph window.
-
-**Getting the file off the device**
-
-Android (`persistentDataPath` is `/storage/emulated/0/Android/data/<package-name>/files`):
-```bash
-adb shell run-as <package-name> ls files                       # sanity check for non-debuggable paths
-adb pull /storage/emulated/0/Android/data/<package-name>/files/pulse-graph.xml .
-```
-For a non-debuggable release build the app-private path is not readable over `adb pull`; either use a debuggable
-build, or write the snapshot somewhere you can read (`adb shell run-as <package-name> cat files/pulse-graph.xml > pulse-graph.xml`).
-
-iOS (`persistentDataPath` is `<app container>/Documents`):
-1. Xcode -> `Window/Devices and Simulators` -> select the device -> **Installed Apps** -> select the app.
-2. `...` (gear) -> **Download Container...** and save the `.xcappdata` bundle.
-3. Right-click the bundle -> **Show Package Contents** -> `AppData/Documents/pulse-graph.xml`.
-
-The app has to be installed with a development profile for **Download Container** to be available. If you want the
-file to show up in the Files app instead, enable `UIFileSharingEnabled` / `LSSupportsOpeningDocumentsInPlace` in
-`Info.plist` and copy it out over USB.
+1. Enable recording before the context is built:
+   ```csharp
+   InitializationGraphRecording.IsEnabled = true; // must be set before builder.Build()
+   ```
+2. Make a **Development Build**. With **Autoconnect Profiler** on, the player is attached from the start;
+   otherwise pick it in the connection dropdown described below.
+3. Open `Window/DTech/Pulse/Initialization Graph` and switch **Source** to `Device`:
+   - the first toolbar dropdown is the same connection target picker the Profiler uses — every discovered device
+     with a search field, `Play Mode` / `Edit Mode` and `Direct Connection` -> `<Enter IP>`. The connection is
+     global, so choosing a target here also changes it for the Profiler and back;
+   - a snapshot is requested automatically as soon as a player connects, and snapshots recorded while it is
+     connected arrive on their own;
+   - **Request** makes the connected player resend the snapshot it recorded last;
+   - the second dropdown lists the received snapshots labelled with the device name, filtered to the selected
+     device — enable **Show All Devices** in it to see the whole history;
+   - received snapshots are kept in memory only (the last 20, cleared on a domain reload); press **Save XML...**
+     to write the selected one to disk and reopen it later through `Source: Editor` -> **Open File...**.
 
 Notes:
+- The remote channel exists only in development builds (`DEVELOPMENT_BUILD`); release builds neither send nor
+  compile it in.
 - `IsEnabled` is read once per `Build()` call.
-- `OnSnapshotRecorded` may be raised on a non-main thread if your systems continue on the thread pool.
+- `OnSnapshotRecorded` may be raised on a non-main thread if your systems continue on the thread pool
+  (sending to the Editor is deferred to the main thread internally).
 - The measured duration of a system includes its callbacks (`OnStartInitialize` / `OnCompleteInitialize` and context events).
 
 ## API Reference
@@ -616,6 +611,8 @@ Global switch for [initialization graph recording](#recording-the-initialization
 #### IsEnabled
 When `true`, contexts built afterwards record their initialization graph. Disabled by default.
 In the Editor it is synced with the `Tools/DTech/Pulse/Record Initialization Graph` menu toggle.
+In a development build every recorded snapshot is also sent to the Editor over the player connection and shows up
+in the Initialization Graph window under `Source: Device`.
 
 #### OnSnapshotRecorded
 Raised once per recorded `InitializationAsync` run with an `InitializationGraphSnapshot`:
