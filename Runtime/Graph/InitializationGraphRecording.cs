@@ -26,27 +26,33 @@ namespace DTech.Pulse
 		/// <summary>
 		/// Enables the recording of initialization graphs. Disabled by default.
 		/// </summary>
+		/// <remarks>
+		/// In a development build every recorded snapshot is additionally sent to the Editor over the player
+		/// connection and can be viewed in the Initialization Graph window with the <c>Device</c> source.
+		/// </remarks>
 		public static bool IsEnabled { get; set; }
 
 		internal static void Publish(InitializationGraphSnapshot snapshot)
 		{
 			Action<InitializationGraphSnapshot> handler = OnSnapshotRecorded;
-			if (handler == null)
+			if (handler != null)
 			{
-				return;
+				foreach (Delegate subscriber in handler.GetInvocationList())
+				{
+					try
+					{
+						((Action<InitializationGraphSnapshot>)subscriber).Invoke(snapshot);
+					}
+					catch (Exception exception)
+					{
+						Debug.LogException(exception);
+					}
+				}
 			}
 
-			foreach (Delegate subscriber in handler.GetInvocationList())
-			{
-				try
-				{
-					((Action<InitializationGraphSnapshot>)subscriber).Invoke(snapshot);
-				}
-				catch (Exception exception)
-				{
-					Debug.LogException(exception);
-				}
-			}
+#if DEVELOPMENT_BUILD || UNITY_EDITOR
+			InitializationGraphRemote.Publish(snapshot);
+#endif
 		}
 	}
 }

@@ -2,6 +2,19 @@
 
 ## [2.1.0] - Unreleased
 
+### Added
+- Initialization graphs recorded in a development build are sent to the Editor over the player connection
+  (`UnityEngine.Networking.PlayerConnection`); no XML is written on the device anymore.
+- Initialization Graph window: **Source** selector (`Editor` / `Device`). `Device` reads snapshots from the
+  connected player, **Request** asks players to resend the last recorded snapshot, and **Save XML...** stores
+  the selected one on disk.
+
+### Changed
+- `InitializationGraphRecording.Publish` no longer returns early when nothing is subscribed to
+  `OnSnapshotRecorded`, so a snapshot still reaches the Editor.
+- Documentation: the manual `persistentDataPath` + `adb pull` / Xcode container workflow is replaced by the
+  player connection one.
+
 ## [2.0.0] - 2026-09-16
 
 ### Changed

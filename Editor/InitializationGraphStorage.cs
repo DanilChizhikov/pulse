@@ -9,10 +9,10 @@ namespace DTech.Pulse.Editor
 {
 	internal static class InitializationGraphStorage
 	{
+		public static event Action<string> OnSaved;
+		
 		private const int MaxStoredSnapshots = 20;
 		private const string FileExtension = ".xml";
-
-		public static event Action<string> OnSaved;
 
 		public static string DirectoryPath =>
 			Path.Combine(Directory.GetParent(Application.dataPath).FullName, "Library", "Pulse", "Graphs");
@@ -39,6 +39,21 @@ namespace DTech.Pulse.Editor
 			OnSaved?.Invoke(path);
 		}
 		
+		public static void Export(InitializationGraphSnapshot snapshot, string path)
+		{
+			if (snapshot == null)
+			{
+				throw new ArgumentNullException(nameof(snapshot));
+			}
+
+			if (string.IsNullOrEmpty(path))
+			{
+				throw new ArgumentException("Path cannot be null or empty.", nameof(path));
+			}
+
+			File.WriteAllText(path, snapshot.ToXml(true));
+		}
+
 		public static IReadOnlyList<string> GetSnapshotPaths()
 		{
 			string directoryPath = DirectoryPath;

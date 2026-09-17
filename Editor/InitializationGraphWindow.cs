@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using UnityEditor;
 using UnityEditor.UIElements;
@@ -15,11 +16,20 @@ namespace DTech.Pulse.Editor
 
 		[SerializeField] private string _selectedPath;
 		[SerializeField] private bool _isShowingAllEdges;
+		[SerializeField] private GraphSource _source;
 
 		private InitializationGraphView _graphView;
+		private ToolbarMenu _sourceMenu;
 		private ToolbarMenu _snapshotsMenu;
+		private ToolbarMenu _deviceMenu;
+		private VisualElement _editorControls;
+		private VisualElement _deviceControls;
+		private ToolbarButton _saveXmlButton;
 		private ToolbarToggle _recordToggle;
 		private Label _summaryLabel;
+
+		private DeviceSnapshot _selectedDevice;
+		private InitializationGraphSnapshot _currentSnapshot;
 
 		[MenuItem("Window/DTech/Pulse/Initialization Graph")]
 		public static void ShowWindow()
@@ -28,23 +38,25 @@ namespace DTech.Pulse.Editor
 			window.titleContent = new GUIContent(WindowTitle);
 			window.Show();
 		}
-		
+
 		private static string GetLatestSnapshotPath()
 		{
 			IReadOnlyList<string> paths = InitializationGraphStorage.GetSnapshotPaths();
 			return paths.Count > 0 ? paths[0] : null;
 		}
-		
+
 		private static string GetRecordCaption() => InitializationGraphRecordingMenu.IsRecordingEnabled ? "Stop Recording" : "Start Recording";
 
 		private void OnEnable()
 		{
 			InitializationGraphStorage.OnSaved += SnapshotSavedHandler;
+			InitializationGraphDeviceSource.OnReceived += DeviceSnapshotReceivedHandler;
 		}
 
 		private void OnDisable()
 		{
 			InitializationGraphStorage.OnSaved -= SnapshotSavedHandler;
+			InitializationGraphDeviceSource.OnReceived -= DeviceSnapshotReceivedHandler;
 		}
 
 		private void OnFocus()
@@ -61,19 +73,49 @@ namespace DTech.Pulse.Editor
 			_graphView.IsShowingAllEdges = _isShowingAllEdges;
 			rootVisualElement.Add(_graphView);
 
-			RefreshSnapshotsMenu();
-			LoadSnapshot(File.Exists(_selectedPath) ? _selectedPath : GetLatestSnapshotPath());
+			ApplySource();
 		}
 
 		private Toolbar CreateToolbar()
 		{
 			var toolbar = new Toolbar();
 
+			_sourceMenu = new ToolbarMenu
+			{
+				tooltip = "Where the graph is read from: snapshots saved by the Editor or a connected player.",
+			};
+			_sourceMenu.menu.AppendAction(
+				GraphSource.Editor.ToString(),
+				_ => SetSource(GraphSource.Editor),
+				_ => _source == GraphSource.Editor ? DropdownMenuAction.Status.Checked : DropdownMenuAction.Status.Normal);
+			_sourceMenu.menu.AppendAction(
+				GraphSource.Device.ToString(),
+				_ => SetSource(GraphSource.Device),
+				_ => _source == GraphSource.Device ? DropdownMenuAction.Status.Checked : DropdownMenuAction.Status.Normal);
+			toolbar.Add(_sourceMenu);
+
+			_editorControls = new VisualElement();
+			_editorControls.style.flexDirection = FlexDirection.Row;
 			_snapshotsMenu = new ToolbarMenu { text = DefaultSnapshotsMenuText };
-			toolbar.Add(_snapshotsMenu);
-			toolbar.Add(new ToolbarButton(RefreshButtonClickHandler) { text = "Refresh" });
-			toolbar.Add(new ToolbarButton(OpenFileButtonClickHandler) { text = "Open File..." });
-			toolbar.Add(new ToolbarButton(RevealButtonClickHandler) { text = "Reveal" });
+			_editorControls.Add(_snapshotsMenu);
+			_editorControls.Add(new ToolbarButton(RefreshButtonClickHandler) { text = "Refresh" });
+			_editorControls.Add(new ToolbarButton(OpenFileButtonClickHandler) { text = "Open File..." });
+			_editorControls.Add(new ToolbarButton(RevealButtonClickHandler) { text = "Reveal" });
+			toolbar.Add(_editorControls);
+
+			_deviceControls = new VisualElement();
+			_deviceControls.style.flexDirection = FlexDirection.Row;
+			_deviceMenu = new ToolbarMenu { text = DefaultSnapshotsMenuText };
+			_deviceControls.Add(_deviceMenu);
+			_deviceControls.Add(new ToolbarButton(RequestButtonClickHandler)
+			{
+				text = "Request",
+				tooltip = "Ask connected players to resend their last recorded snapshot.",
+			});
+			_saveXmlButton = new ToolbarButton(SaveXmlButtonClickHandler) { text = "Save XML..." };
+			_deviceControls.Add(_saveXmlButton);
+			toolbar.Add(_deviceControls);
+
 			toolbar.Add(new ToolbarButton(FrameAllButtonClickHandler) { text = "Frame All" });
 
 			var allEdgesToggle = new ToolbarToggle
@@ -105,6 +147,41 @@ namespace DTech.Pulse.Editor
 			return toolbar;
 		}
 
+		private void SetSource(GraphSource source)
+		{
+			if (_source == source)
+			{
+				return;
+			}
+
+			_source = source;
+			ApplySource();
+		}
+
+		private void ApplySource()
+		{
+			bool isDevice = _source == GraphSource.Device;
+			_sourceMenu.text = $"Source: {_source}";
+			_editorControls.style.display = isDevice ? DisplayStyle.None : DisplayStyle.Flex;
+			_deviceControls.style.display = isDevice ? DisplayStyle.Flex : DisplayStyle.None;
+
+			if (isDevice)
+			{
+				RefreshDeviceMenu();
+				LoadDeviceSnapshot(_selectedDevice ?? GetLatestDeviceSnapshot());
+				return;
+			}
+
+			RefreshSnapshotsMenu();
+			LoadSnapshot(File.Exists(_selectedPath) ? _selectedPath : GetLatestSnapshotPath());
+		}
+
+		private static DeviceSnapshot GetLatestDeviceSnapshot()
+		{
+			IReadOnlyList<DeviceSnapshot> snapshots = InitializationGraphDeviceSource.Snapshots;
+			return snapshots.Count > 0 ? snapshots[0] : null;
+		}
+
 		private void RefreshSnapshotsMenu()
 		{
 			DropdownMenu menu = _snapshotsMenu.menu;
@@ -123,6 +200,27 @@ namespace DTech.Pulse.Editor
 					Path.GetFileNameWithoutExtension(path),
 					_ => LoadSnapshot(path),
 					_ => path == _selectedPath ? DropdownMenuAction.Status.Checked : DropdownMenuAction.Status.Normal);
+			}
+		}
+
+		private void RefreshDeviceMenu()
+		{
+			DropdownMenu menu = _deviceMenu.menu;
+			menu.MenuItems().Clear();
+
+			IReadOnlyList<DeviceSnapshot> snapshots = InitializationGraphDeviceSource.Snapshots;
+			if (snapshots.Count == 0)
+			{
+				menu.AppendAction("No received snapshots", _ => { }, DropdownMenuAction.Status.Disabled);
+				return;
+			}
+
+			foreach (DeviceSnapshot received in snapshots)
+			{
+				menu.AppendAction(
+					received.Label,
+					_ => LoadDeviceSnapshot(received),
+					_ => received == _selectedDevice ? DropdownMenuAction.Status.Checked : DropdownMenuAction.Status.Normal);
 			}
 		}
 
@@ -148,6 +246,28 @@ namespace DTech.Pulse.Editor
 			}
 
 			_snapshotsMenu.text = Path.GetFileNameWithoutExtension(path);
+			ShowSnapshot(snapshot);
+		}
+
+		private void LoadDeviceSnapshot(DeviceSnapshot received)
+		{
+			_selectedDevice = received;
+			if (received == null)
+			{
+				ShowEmpty("No device snapshots. Connect a development build " +
+					$"(players: {InitializationGraphDeviceSource.ConnectedPlayersCount.ToString(CultureInfo.InvariantCulture)}).");
+				return;
+			}
+
+			_deviceMenu.text = received.Label;
+			ShowSnapshot(received.Snapshot);
+		}
+
+		private void ShowSnapshot(InitializationGraphSnapshot snapshot)
+		{
+			_currentSnapshot = snapshot;
+			_saveXmlButton.SetEnabled(true);
+
 			int levelsCount = InitializationGraphLevels.GetCount(InitializationGraphLevels.Calculate(snapshot));
 			_summaryLabel.text = $"{snapshot.Status} · {InitializationTimeFormat.Format(snapshot.TotalMilliseconds)} · " +
 				$"{snapshot.Systems.Count} systems · {levelsCount} levels";
@@ -156,7 +276,10 @@ namespace DTech.Pulse.Editor
 
 		private void ShowEmpty(string message)
 		{
+			_currentSnapshot = null;
+			_saveXmlButton.SetEnabled(false);
 			_snapshotsMenu.text = DefaultSnapshotsMenuText;
+			_deviceMenu.text = DefaultSnapshotsMenuText;
 			_summaryLabel.text = message;
 			_graphView.Show(null);
 		}
@@ -169,8 +292,26 @@ namespace DTech.Pulse.Editor
 				return;
 			}
 
+			if (_source != GraphSource.Editor)
+			{
+				_selectedPath = path;
+				return;
+			}
+
 			RefreshSnapshotsMenu();
 			LoadSnapshot(path);
+		}
+
+		private void DeviceSnapshotReceivedHandler(DeviceSnapshot received)
+		{
+			if (_graphView == null || _source != GraphSource.Device)
+			{
+				_selectedDevice = received;
+				return;
+			}
+
+			RefreshDeviceMenu();
+			LoadDeviceSnapshot(received);
 		}
 
 		private void RefreshButtonClickHandler()
@@ -203,6 +344,44 @@ namespace DTech.Pulse.Editor
 			}
 		}
 
+		private void RequestButtonClickHandler()
+		{
+			int playersCount = InitializationGraphDeviceSource.ConnectedPlayersCount;
+			if (playersCount == 0)
+			{
+				_summaryLabel.text = "No connected players. Run a development build with the profiler attached.";
+				return;
+			}
+
+			InitializationGraphDeviceSource.RequestSnapshot();
+		}
+
+		private void SaveXmlButtonClickHandler()
+		{
+			if (_currentSnapshot == null)
+			{
+				return;
+			}
+
+			string directoryPath = InitializationGraphStorage.DirectoryPath;
+			Directory.CreateDirectory(directoryPath);
+			string fileName = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
+			string path = EditorUtility.SaveFilePanel("Save Initialization Graph", directoryPath, fileName, "xml");
+			if (string.IsNullOrEmpty(path))
+			{
+				return;
+			}
+
+			try
+			{
+				InitializationGraphStorage.Export(_currentSnapshot, path);
+			}
+			catch (Exception exception)
+			{
+				Debug.LogException(exception);
+			}
+		}
+
 		private void FrameAllButtonClickHandler()
 		{
 			_graphView.FrameAll();
@@ -218,6 +397,12 @@ namespace DTech.Pulse.Editor
 		{
 			_isShowingAllEdges = changeEvent.newValue;
 			_graphView.IsShowingAllEdges = changeEvent.newValue;
+		}
+
+		private enum GraphSource
+		{
+			Editor = 0,
+			Device = 1,
 		}
 	}
 }
