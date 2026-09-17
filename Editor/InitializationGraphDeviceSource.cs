@@ -12,7 +12,8 @@ namespace DTech.Pulse.Editor
 	internal static class InitializationGraphDeviceSource
 	{
 		public static event Action<DeviceSnapshot> OnReceived;
-		
+		public static event Action OnPlayersChanged;
+
 		private const int MaxReceivedSnapshots = 20;
 
 		private static readonly List<DeviceSnapshot> _receivedSnapshots = new();
@@ -25,11 +26,38 @@ namespace DTech.Pulse.Editor
 		{
 			EditorConnection.instance.Initialize();
 			EditorConnection.instance.Register(InitializationGraphRemote.SnapshotMessageId, MessageHandler);
+			EditorConnection.instance.RegisterConnection(PlayerConnectedHandler);
+			EditorConnection.instance.RegisterDisconnection(PlayerDisconnectedHandler);
 		}
-		
+
 		public static void RequestSnapshot()
 		{
 			EditorConnection.instance.Send(InitializationGraphRemote.RequestMessageId, Array.Empty<byte>());
+		}
+
+		public static void RequestSnapshot(int playerId)
+		{
+			EditorConnection.instance.Send(InitializationGraphRemote.RequestMessageId, Array.Empty<byte>(), playerId);
+		}
+
+		public static string GetPlayerName(int playerId)
+		{
+			List<ConnectedPlayer> players = EditorConnection.instance.ConnectedPlayers;
+			if (players == null)
+			{
+				return null;
+			}
+
+			for (int i = 0; i < players.Count; i++)
+			{
+				ConnectedPlayer player = players[i];
+				if (player != null && player.playerId == playerId)
+				{
+					return player.name;
+				}
+			}
+
+			return null;
 		}
 
 		private static void MessageHandler(MessageEventArgs args)
@@ -45,7 +73,7 @@ namespace DTech.Pulse.Editor
 				return;
 			}
 
-			var received = new DeviceSnapshot(snapshot, args.playerId, DateTime.Now);
+			var received = new DeviceSnapshot(snapshot, args.playerId, GetPlayerName(args.playerId), DateTime.Now);
 			_receivedSnapshots.Insert(0, received);
 			if (_receivedSnapshots.Count > MaxReceivedSnapshots)
 			{
@@ -53,6 +81,17 @@ namespace DTech.Pulse.Editor
 			}
 
 			OnReceived?.Invoke(received);
+		}
+
+		private static void PlayerConnectedHandler(int playerId)
+		{
+			EditorApplication.delayCall += () => RequestSnapshot(playerId);
+			OnPlayersChanged?.Invoke();
+		}
+
+		private static void PlayerDisconnectedHandler(int playerId)
+		{
+			OnPlayersChanged?.Invoke();
 		}
 	}
 }

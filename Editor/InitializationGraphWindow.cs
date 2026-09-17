@@ -3,8 +3,10 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using UnityEditor;
+using UnityEditor.Networking.PlayerConnection;
 using UnityEditor.UIElements;
 using UnityEngine;
+using UnityEngine.Networking.PlayerConnection;
 using UnityEngine.UIElements;
 
 namespace DTech.Pulse.Editor
@@ -16,18 +18,20 @@ namespace DTech.Pulse.Editor
 
 		[SerializeField] private string _selectedPath;
 		[SerializeField] private bool _isShowingAllEdges;
-		[SerializeField] private GraphSource _source;
+		[SerializeField] private bool _isShowingAllDevices;
+		
+		private bool IsDeviceSource => _connectionState?.connectedToTarget == ConnectionTarget.Player;
 
 		private InitializationGraphView _graphView;
-		private ToolbarMenu _sourceMenu;
 		private ToolbarMenu _snapshotsMenu;
 		private ToolbarMenu _deviceMenu;
+		private IMGUIContainer _connectionDropdown;
 		private VisualElement _editorControls;
 		private VisualElement _deviceControls;
 		private ToolbarButton _saveXmlButton;
 		private ToolbarToggle _recordToggle;
 		private Label _summaryLabel;
-
+		private IConnectionState _connectionState;
 		private DeviceSnapshot _selectedDevice;
 		private InitializationGraphSnapshot _currentSnapshot;
 
@@ -51,12 +55,20 @@ namespace DTech.Pulse.Editor
 		{
 			InitializationGraphStorage.OnSaved += SnapshotSavedHandler;
 			InitializationGraphDeviceSource.OnReceived += DeviceSnapshotReceivedHandler;
+			InitializationGraphDeviceSource.OnPlayersChanged += PlayersChangedHandler;
 		}
 
 		private void OnDisable()
 		{
 			InitializationGraphStorage.OnSaved -= SnapshotSavedHandler;
 			InitializationGraphDeviceSource.OnReceived -= DeviceSnapshotReceivedHandler;
+			InitializationGraphDeviceSource.OnPlayersChanged -= PlayersChangedHandler;
+			DisposeConnectionState();
+		}
+
+		private void OnDestroy()
+		{
+			DisposeConnectionState();
 		}
 
 		private void OnFocus()
@@ -66,6 +78,7 @@ namespace DTech.Pulse.Editor
 
 		private void CreateGUI()
 		{
+			_connectionState = PlayerConnectionGUIUtility.GetConnectionState(this, ConnectionChangedHandler);
 			rootVisualElement.Add(CreateToolbar());
 
 			_graphView = new InitializationGraphView();
@@ -80,19 +93,13 @@ namespace DTech.Pulse.Editor
 		{
 			var toolbar = new Toolbar();
 
-			_sourceMenu = new ToolbarMenu
+			_connectionDropdown = new IMGUIContainer(ConnectionDropdownDrawHandler)
 			{
-				tooltip = "Where the graph is read from: snapshots saved by the Editor or a connected player.",
+				tooltip = "Where the graph is read from. Same connection target as the Profiler: " +
+					"the Editor shows snapshots saved locally, a player shows snapshots received from the device.",
 			};
-			_sourceMenu.menu.AppendAction(
-				GraphSource.Editor.ToString(),
-				_ => SetSource(GraphSource.Editor),
-				_ => _source == GraphSource.Editor ? DropdownMenuAction.Status.Checked : DropdownMenuAction.Status.Normal);
-			_sourceMenu.menu.AppendAction(
-				GraphSource.Device.ToString(),
-				_ => SetSource(GraphSource.Device),
-				_ => _source == GraphSource.Device ? DropdownMenuAction.Status.Checked : DropdownMenuAction.Status.Normal);
-			toolbar.Add(_sourceMenu);
+			_connectionDropdown.style.alignSelf = Align.Center;
+			toolbar.Add(_connectionDropdown);
 
 			_editorControls = new VisualElement();
 			_editorControls.style.flexDirection = FlexDirection.Row;
@@ -147,28 +154,19 @@ namespace DTech.Pulse.Editor
 			return toolbar;
 		}
 
-		private void SetSource(GraphSource source)
-		{
-			if (_source == source)
-			{
-				return;
-			}
-
-			_source = source;
-			ApplySource();
-		}
-
 		private void ApplySource()
 		{
-			bool isDevice = _source == GraphSource.Device;
-			_sourceMenu.text = $"Source: {_source}";
+			bool isDevice = IsDeviceSource;
 			_editorControls.style.display = isDevice ? DisplayStyle.None : DisplayStyle.Flex;
 			_deviceControls.style.display = isDevice ? DisplayStyle.Flex : DisplayStyle.None;
 
 			if (isDevice)
 			{
 				RefreshDeviceMenu();
-				LoadDeviceSnapshot(_selectedDevice ?? GetLatestDeviceSnapshot());
+				bool isSelectedVisible = _selectedDevice != null &&
+					(!IsFilteringByTarget(InitializationGraphDeviceSource.Snapshots) || IsMatchingTarget(_selectedDevice));
+
+				LoadDeviceSnapshot(isSelectedVisible ? _selectedDevice : GetLatestDeviceSnapshot());
 				return;
 			}
 
@@ -176,11 +174,43 @@ namespace DTech.Pulse.Editor
 			LoadSnapshot(File.Exists(_selectedPath) ? _selectedPath : GetLatestSnapshotPath());
 		}
 
-		private static DeviceSnapshot GetLatestDeviceSnapshot()
+		private DeviceSnapshot GetLatestDeviceSnapshot()
 		{
 			IReadOnlyList<DeviceSnapshot> snapshots = InitializationGraphDeviceSource.Snapshots;
-			return snapshots.Count > 0 ? snapshots[0] : null;
+			bool isFiltered = IsFilteringByTarget(snapshots);
+			for (int i = 0; i < snapshots.Count; i++)
+			{
+				DeviceSnapshot received = snapshots[i];
+				if (!isFiltered || IsMatchingTarget(received))
+				{
+					return received;
+				}
+			}
+
+			return null;
 		}
+
+		private bool IsFilteringByTarget(IReadOnlyList<DeviceSnapshot> snapshots)
+		{
+			if (_isShowingAllDevices || _connectionState == null ||
+				_connectionState.connectedToTarget != ConnectionTarget.Player)
+			{
+				return false;
+			}
+
+			for (int i = 0; i < snapshots.Count; i++)
+			{
+				if (IsMatchingTarget(snapshots[i]))
+				{
+					return true;
+				}
+			}
+
+			return false;
+		}
+
+		private bool IsMatchingTarget(DeviceSnapshot received) =>
+			string.Equals(received.DeviceName, _connectionState?.connectionName, StringComparison.Ordinal);
 
 		private void RefreshSnapshotsMenu()
 		{
@@ -212,16 +242,40 @@ namespace DTech.Pulse.Editor
 			if (snapshots.Count == 0)
 			{
 				menu.AppendAction("No received snapshots", _ => { }, DropdownMenuAction.Status.Disabled);
+				AppendShowAllDevicesAction(menu);
 				return;
 			}
 
+			bool isFiltered = IsFilteringByTarget(snapshots);
 			foreach (DeviceSnapshot received in snapshots)
 			{
+				if (isFiltered && !IsMatchingTarget(received))
+				{
+					continue;
+				}
+
 				menu.AppendAction(
 					received.Label,
 					_ => LoadDeviceSnapshot(received),
 					_ => received == _selectedDevice ? DropdownMenuAction.Status.Checked : DropdownMenuAction.Status.Normal);
 			}
+
+			AppendShowAllDevicesAction(menu);
+		}
+
+		private void AppendShowAllDevicesAction(DropdownMenu menu)
+		{
+			menu.AppendSeparator();
+			menu.AppendAction(
+				"Show All Devices",
+				_ => ToggleShowAllDevices(),
+				_ => _isShowingAllDevices ? DropdownMenuAction.Status.Checked : DropdownMenuAction.Status.Normal);
+		}
+
+		private void ToggleShowAllDevices()
+		{
+			_isShowingAllDevices = !_isShowingAllDevices;
+			RefreshDeviceMenu();
 		}
 
 		private void LoadSnapshot(string path)
@@ -254,8 +308,7 @@ namespace DTech.Pulse.Editor
 			_selectedDevice = received;
 			if (received == null)
 			{
-				ShowEmpty("No device snapshots. Connect a development build " +
-					$"(players: {InitializationGraphDeviceSource.ConnectedPlayersCount.ToString(CultureInfo.InvariantCulture)}).");
+				ShowEmpty(GetNoDeviceSnapshotMessage());
 				return;
 			}
 
@@ -284,6 +337,58 @@ namespace DTech.Pulse.Editor
 			_graphView.Show(null);
 		}
 
+		private string GetNoDeviceSnapshotMessage()
+		{
+			if (_connectionState?.connectedToTarget == ConnectionTarget.Player)
+			{
+				return $"Connected to {_connectionState.connectionName}. No snapshot yet - press Request.";
+			}
+
+			return "No device selected. Pick one in the dropdown " +
+				$"(players: {InitializationGraphDeviceSource.ConnectedPlayersCount.ToString(CultureInfo.InvariantCulture)}).";
+		}
+
+		private void ConnectionDropdownDrawHandler()
+		{
+			if (_connectionState == null)
+			{
+				return;
+			}
+
+			PlayerConnectionGUILayout.ConnectionTargetSelectionDropdown(_connectionState, EditorStyles.toolbarDropDown);
+		}
+
+		private void ConnectionChangedHandler(string playerName)
+		{
+			if (_graphView == null)
+			{
+				return;
+			}
+
+			if (IsDeviceSource)
+			{
+				InitializationGraphDeviceSource.RequestSnapshot();
+			}
+
+			ApplySource();
+		}
+
+		private void PlayersChangedHandler()
+		{
+			if (_graphView != null && IsDeviceSource)
+			{
+				RefreshDeviceMenu();
+			}
+
+			Repaint();
+		}
+
+		private void DisposeConnectionState()
+		{
+			_connectionState?.Dispose();
+			_connectionState = null;
+		}
+
 		private void SnapshotSavedHandler(string path)
 		{
 			if (_graphView == null)
@@ -292,7 +397,7 @@ namespace DTech.Pulse.Editor
 				return;
 			}
 
-			if (_source != GraphSource.Editor)
+			if (IsDeviceSource)
 			{
 				_selectedPath = path;
 				return;
@@ -304,13 +409,18 @@ namespace DTech.Pulse.Editor
 
 		private void DeviceSnapshotReceivedHandler(DeviceSnapshot received)
 		{
-			if (_graphView == null || _source != GraphSource.Device)
+			if (_graphView == null || !IsDeviceSource)
 			{
 				_selectedDevice = received;
 				return;
 			}
 
 			RefreshDeviceMenu();
+			if (IsFilteringByTarget(InitializationGraphDeviceSource.Snapshots) && !IsMatchingTarget(received))
+			{
+				return;
+			}
+
 			LoadDeviceSnapshot(received);
 		}
 
@@ -349,7 +459,7 @@ namespace DTech.Pulse.Editor
 			int playersCount = InitializationGraphDeviceSource.ConnectedPlayersCount;
 			if (playersCount == 0)
 			{
-				_summaryLabel.text = "No connected players. Run a development build with the profiler attached.";
+				_summaryLabel.text = "No connected players. Pick a device in the dropdown and run a development build.";
 				return;
 			}
 
@@ -397,12 +507,6 @@ namespace DTech.Pulse.Editor
 		{
 			_isShowingAllEdges = changeEvent.newValue;
 			_graphView.IsShowingAllEdges = changeEvent.newValue;
-		}
-
-		private enum GraphSource
-		{
-			Editor = 0,
-			Device = 1,
 		}
 	}
 }

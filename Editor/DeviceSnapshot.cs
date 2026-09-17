@@ -7,16 +7,20 @@ namespace DTech.Pulse.Editor
 	{
 		public InitializationGraphSnapshot Snapshot { get; }
 		public int PlayerId { get; }
+		public string DeviceName { get; }
 		public DateTime ReceivedAt { get; }
 		public string Label { get; }
 
-		public DeviceSnapshot(InitializationGraphSnapshot snapshot, int playerId, DateTime receivedAt)
+		public DeviceSnapshot(InitializationGraphSnapshot snapshot, int playerId, string deviceName, DateTime receivedAt)
 		{
 			Snapshot = snapshot;
 			PlayerId = playerId;
+			DeviceName = string.IsNullOrEmpty(deviceName)
+				? $"Player {playerId.ToString(CultureInfo.InvariantCulture)}"
+				: deviceName;
+
 			ReceivedAt = receivedAt;
-			Label = $"Player {playerId.ToString(CultureInfo.InvariantCulture)} · " +
-				receivedAt.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
+			Label = $"{DeviceName} · {receivedAt.ToString("HH:mm:ss", CultureInfo.InvariantCulture)}";
 		}
 	}
 }

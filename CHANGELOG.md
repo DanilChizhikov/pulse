@@ -8,6 +8,10 @@
 - Initialization Graph window: **Source** selector (`Editor` / `Device`). `Device` reads snapshots from the
   connected player, **Request** asks players to resend the last recorded snapshot, and **Save XML...** stores
   the selected one on disk.
+- Initialization Graph window: Profiler-style connection dropdown for `Device` - every discovered device with
+  search, `Play Mode` / `Edit Mode` and `Direct Connection`. A snapshot is requested automatically when a
+  player connects, received snapshots are labelled with the device name, and the snapshot list shows only the
+  selected device unless **Show All Devices** is enabled.
 
 ### Changed
 - `InitializationGraphRecording.Publish` no longer returns early when nothing is subscribed to

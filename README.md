@@ -326,11 +326,16 @@ no files are written on the device and nothing has to be pulled off it.
    InitializationGraphRecording.IsEnabled = true; // must be set before builder.Build()
    ```
 2. Make a **Development Build**. With **Autoconnect Profiler** on, the player is attached from the start;
-   otherwise connect it later from the Profiler window.
+   otherwise pick it in the connection dropdown described below.
 3. Open `Window/DTech/Pulse/Initialization Graph` and switch **Source** to `Device`:
-   - snapshots recorded while the player is connected arrive on their own and are selected automatically;
-   - initialization usually finishes before the profiler is attached — press **Request** to make every connected
-     player resend the snapshot it recorded last;
+   - the first toolbar dropdown is the same connection target picker the Profiler uses — every discovered device
+     with a search field, `Play Mode` / `Edit Mode` and `Direct Connection` -> `<Enter IP>`. The connection is
+     global, so choosing a target here also changes it for the Profiler and back;
+   - a snapshot is requested automatically as soon as a player connects, and snapshots recorded while it is
+     connected arrive on their own;
+   - **Request** makes the connected player resend the snapshot it recorded last;
+   - the second dropdown lists the received snapshots labelled with the device name, filtered to the selected
+     device — enable **Show All Devices** in it to see the whole history;
    - received snapshots are kept in memory only (the last 20, cleared on a domain reload); press **Save XML...**
      to write the selected one to disk and reopen it later through `Source: Editor` -> **Open File...**.
 
