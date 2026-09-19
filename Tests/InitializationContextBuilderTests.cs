@@ -283,6 +283,92 @@ namespace DTech.Pulse.Tests
         }
 
         [Test]
+        public async Task NonCriticalSystems_ShouldNotStart_UntilCriticalPhaseCompletes()
+        {
+            var builder = new InitializationContextBuilder();
+            var criticalCompletion = new TaskCompletionSource<bool>();
+            var startedSystems = new List<Type>();
+
+            builder.AddSystem(new SlowSystem(criticalCompletion.Task)).SetAsCritical();
+            builder.AddSystem(new DummySystem());
+            builder.AddSystem(new DepA());
+
+            InitializationContext context = builder.Build();
+            context.OnSystemInitializationBegan += type => startedSystems.Add(type);
+
+            Task initialization = context.InitializationAsync(CancellationToken.None);
+
+            CollectionAssert.AreEqual(new[] { typeof(SlowSystem) }, startedSystems,
+                "No non-critical system may start while a critical one is still running.");
+
+            criticalCompletion.SetResult(true);
+            await initialization;
+
+            Assert.AreEqual(3, startedSystems.Count);
+            Assert.AreEqual(typeof(SlowSystem), startedSystems[0]);
+        }
+
+        [Test]
+        public async Task Build_ShouldPromoteTransitiveDependencies_OfCriticalSystem()
+        {
+            var builder = new InitializationContextBuilder();
+            var startedSystems = new List<Type>();
+
+            builder.AddSystem(new PromotionRoot()).SetAsCritical();
+            builder.AddSystem(new PromotionMiddle());
+            builder.AddSystem(new PromotionLeaf());
+            builder.AddSystem(new DummySystem());
+
+            InitializationContext context = builder.Build();
+            context.OnSystemInitializationBegan += type => startedSystems.Add(type);
+
+            Assert.AreEqual(3, context.TotalCriticalSystemsCount,
+                "Transitive dependencies of a critical system must be promoted to critical.");
+
+            await context.InitializationAsync(CancellationToken.None);
+
+            CollectionAssert.AreEqual(
+                new[] { typeof(PromotionLeaf), typeof(PromotionMiddle), typeof(PromotionRoot), typeof(DummySystem) },
+                startedSystems,
+                "The promoted chain must be initialized before any non-critical system.");
+        }
+
+        [Test]
+        public async Task Initialization_ShouldComplete_WhenThereAreNoCriticalSystems()
+        {
+            var builder = new InitializationContextBuilder();
+            builder.AddSystem(new DummySystem());
+            builder.AddSystem(new DepA());
+
+            InitializationContext context = builder.Build();
+
+            await context.InitializationAsync(CancellationToken.None);
+
+            Assert.AreEqual(0, context.TotalCriticalSystemsCount);
+            Assert.AreEqual(2, context.InitializedSystemsCount);
+        }
+
+        [Test]
+        public void NonCriticalSystems_ShouldNotStart_WhenCriticalSystemFails()
+        {
+            var startedSystems = new List<Type>();
+            var builder = new InitializationContextBuilder();
+
+            builder.AddSystem(new ThrowingSystem()).SetAsCritical();
+            builder.AddSystem(new DummySystem());
+
+            InitializationContext context = builder.Build();
+            context.OnSystemInitializationBegan += type => startedSystems.Add(type);
+
+            var exception = Assert.Throws<InvalidOperationException>(() =>
+                context.InitializationAsync(CancellationToken.None).GetAwaiter().GetResult());
+            StringAssert.Contains(ThrowingSystem.ErrorMessage, exception!.Message);
+
+            CollectionAssert.DoesNotContain(startedSystems, typeof(DummySystem),
+                "No non-critical system may start when the critical phase failed.");
+        }
+
+        [Test]
         public void Initialization_ShouldThrow_WhenContextRunTwice()
         {
             var builder = new InitializationContextBuilder();
@@ -558,6 +644,27 @@ namespace DTech.Pulse.Tests
 
             [InitDependency]
             public MultipleMarkedConstructorsSystem(SimpleSystem simpleSystem) { }
+
+            public Task InitializeAsync(CancellationToken token) => Task.CompletedTask;
+        }
+
+        private sealed class PromotionLeaf : IInitializable
+        {
+            public Task InitializeAsync(CancellationToken token) => Task.CompletedTask;
+        }
+
+        private sealed class PromotionMiddle : IInitializable
+        {
+            [InitDependency]
+            private PromotionLeaf _leaf;
+
+            public Task InitializeAsync(CancellationToken token) => Task.CompletedTask;
+        }
+
+        private sealed class PromotionRoot : IInitializable
+        {
+            [InitDependency]
+            private PromotionMiddle _middle;
 
             public Task InitializeAsync(CancellationToken token) => Task.CompletedTask;
         }

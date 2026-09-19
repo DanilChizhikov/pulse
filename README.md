@@ -87,8 +87,12 @@ For example `https://github.com/DanilChizhikov/pulse.git#v2.1.0`.
 
 
 - **Critical systems support**
-  
+
   You can mark systems as `critical`.
+
+  Critical systems are initialized in the first phase of a run: no non-critical system starts until every critical one is done.
+  Criticality is propagated up the dependency chain, so every transitive dependency of a critical system becomes critical too
+  (the builder logs a warning listing the systems it had to promote).
 
   The `InitializationContext` tracks them and raises `OnCriticalSystemsInitialized` once all critical systems are successfully initialized.
 
@@ -557,10 +561,14 @@ node.RemoveDependencies(typeof(IMySubsystemBase));
 
 #### SetAsCritical()
 Marks this system as **critical**.
-The `InitializationContext` will track it and only raise `OnCriticalSystemsInitialized` once all critical systems are done.
+It is initialized in the first phase of the run, before any non-critical system starts, and
+`OnCriticalSystemsInitialized` is raised once all critical systems are done.
 ```csharp
 builder.AddSystem(db).SetAsCritical();
 ```
+Every transitive dependency of a critical system is promoted to critical automatically — otherwise the critical
+phase could never finish. `Build()` logs a warning listing the promoted systems, and the Initialization Graph
+window marks them with a `CRITICAL (dep)` badge, so you can mark them explicitly.
 
 #### OnStartInitialize(Action<Type> callback) / OnCompleteInitialize(Action<Type> callback)
 Registers callbacks for a particular system:
@@ -619,7 +627,8 @@ Raised once per recorded `InitializationAsync` run with an `InitializationGraphS
 - `Status` — `Completed`, `Cancelled` or `Failed`;
 - `RecordedAtUtc`, `TotalMilliseconds`;
 - `Systems` — per system: `TypeName`, `FullTypeName`, `StartOrder` (`-1` if not started), `IsCritical`,
-  `Status`, `StartMilliseconds`, `DurationMilliseconds`, `DependencyIndices` (indices into `Systems`), `Error`.
+  `IsAutoCritical` (promoted because a critical system depends on it), `Status`, `StartMilliseconds`,
+  `DurationMilliseconds`, `DependencyIndices` (indices into `Systems`), `Error`.
 
 Use `snapshot.ToXml()` / `InitializationGraphSnapshot.FromXml(xml)` to persist and restore snapshots.
 

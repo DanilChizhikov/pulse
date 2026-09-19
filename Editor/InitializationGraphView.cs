@@ -63,14 +63,18 @@ namespace DTech.Pulse.Editor
 
 		private static string GetLevelTitle(
 			IReadOnlyList<InitializationSystemRecord> systems,
+			bool[] criticalSystems,
 			IGrouping<int, int> level)
 		{
+			bool isCritical = false;
 			bool isStarted = false;
 			double minStartMilliseconds = double.MaxValue;
 			double maxEndMilliseconds = double.MinValue;
 
 			foreach (int index in level)
 			{
+				isCritical |= criticalSystems[index];
+
 				InitializationSystemRecord system = systems[index];
 				if (system.StartOrder < 0)
 				{
@@ -84,9 +88,10 @@ namespace DTech.Pulse.Editor
 					system.StartMilliseconds + system.DurationMilliseconds);
 			}
 
+			string prefix = isCritical ? "Critical · " : string.Empty;
 			return isStarted
-				? $"Level {level.Key} · {InitializationTimeFormat.Format(maxEndMilliseconds - minStartMilliseconds)}"
-				: $"Level {level.Key} · not started";
+				? $"{prefix}Level {level.Key} · {InitializationTimeFormat.Format(maxEndMilliseconds - minStartMilliseconds)}"
+				: $"{prefix}Level {level.Key} · not started";
 		}
 
 		private static GraphViewChange GraphViewChangedHandler(GraphViewChange change)
@@ -143,6 +148,7 @@ namespace DTech.Pulse.Editor
 			double maxDurationMilliseconds = systems.Max(system => system.DurationMilliseconds);
 			var nodes = new InitializationSystemNode[systems.Count];
 			int[] levels = InitializationGraphLevels.Calculate(snapshot);
+			bool[] criticalSystems = InitializationGraphLevels.ResolveCriticalSystems(snapshot);
 			bool[][] redundantDependencies = InitializationGraphReduction.FindRedundantDependencies(systems, levels);
 
 			IEnumerable<IGrouping<int, int>> groupedLevels = Enumerable.Range(0, systems.Count)
@@ -151,7 +157,7 @@ namespace DTech.Pulse.Editor
 
 			foreach (IGrouping<int, int> level in groupedLevels)
 			{
-				var group = new Group { title = GetLevelTitle(systems, level) };
+				var group = new Group { title = GetLevelTitle(systems, criticalSystems, level) };
 				group.capabilities &= ~Capabilities.Deletable;
 				AddElement(group);
 
@@ -162,7 +168,11 @@ namespace DTech.Pulse.Editor
 				int row = 0;
 				foreach (int index in orderedIndices)
 				{
-					var node = new InitializationSystemNode(systems[index], levels[index], maxDurationMilliseconds);
+					var node = new InitializationSystemNode(
+						systems[index],
+						levels[index],
+						criticalSystems[index],
+						maxDurationMilliseconds);
 					node.SetPosition(new Rect(level.Key * ColumnWidth, row * RowHeight, 0f, 0f));
 					AddElement(node);
 					group.AddElement(node);

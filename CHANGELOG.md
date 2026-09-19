@@ -3,6 +3,10 @@
 ## [2.1.0] - Unreleased
 
 ### Added
+- `InitializationSystemRecord.IsAutoCritical` plus the optional `isAutoCritical` XML attribute: tells an
+  auto-promoted dependency from an explicitly marked system. Older snapshots without the attribute still load.
+- Initialization Graph window: critical systems occupy the first columns, their groups are titled
+  `Critical · Level N`, auto-promoted ones carry a `CRITICAL (dep)` badge, and the summary shows the critical count.
 - Initialization graphs recorded in a development build are sent to the Editor over the player connection
   (`UnityEngine.Networking.PlayerConnection`); no XML is written on the device anymore.
 - Initialization Graph window: **Source** selector (`Editor` / `Device`). `Device` reads snapshots from the
@@ -14,6 +18,11 @@
   selected device unless **Show All Devices** is enabled.
 
 ### Changed
+- **Breaking behaviour:** critical systems now run in their own first phase. No non-critical system starts until
+  every critical one is initialized, so the time to the `OnCriticalSystemsInitialized` event drops while the total
+  run may get longer. Previously criticality only fed that event and the whole graph ran in parallel.
+- `SetAsCritical()` propagates criticality up the dependency chain: every transitive dependency of a critical
+  system becomes critical, and `Build()` logs a single warning listing the promoted systems.
 - `InitializationGraphRecording.Publish` no longer returns early when nothing is subscribed to
   `OnSnapshotRecorded`, so a snapshot still reaches the Editor.
 - Documentation: the manual `persistentDataPath` + `adb pull` / Xcode container workflow is replaced by the

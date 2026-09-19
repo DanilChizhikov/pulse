@@ -322,8 +322,17 @@ namespace DTech.Pulse.Editor
 			_saveXmlButton.SetEnabled(true);
 
 			int levelsCount = InitializationGraphLevels.GetCount(InitializationGraphLevels.Calculate(snapshot));
+			int criticalCount = 0;
+			foreach (bool isCritical in InitializationGraphLevels.ResolveCriticalSystems(snapshot))
+			{
+				if (isCritical)
+				{
+					criticalCount++;
+				}
+			}
+
 			_summaryLabel.text = $"{snapshot.Status} · {InitializationTimeFormat.Format(snapshot.TotalMilliseconds)} · " +
-				$"{snapshot.Systems.Count} systems · {levelsCount} levels";
+				$"{snapshot.Systems.Count} systems ({criticalCount} critical) · {levelsCount} levels";
 			_graphView.Show(snapshot);
 		}
 

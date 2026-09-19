@@ -162,6 +162,7 @@ namespace DTech.Pulse.Tests
                 Assert.AreEqual(expected.FullTypeName, actual.FullTypeName);
                 Assert.AreEqual(expected.StartOrder, actual.StartOrder);
                 Assert.AreEqual(expected.IsCritical, actual.IsCritical);
+                Assert.AreEqual(expected.IsAutoCritical, actual.IsAutoCritical);
                 Assert.AreEqual(expected.Status, actual.Status);
                 Assert.AreEqual(expected.StartMilliseconds, actual.StartMilliseconds, MillisecondsTolerance);
                 Assert.AreEqual(expected.DurationMilliseconds, actual.DurationMilliseconds, MillisecondsTolerance);
@@ -198,6 +199,45 @@ namespace DTech.Pulse.Tests
             Assert.AreEqual(string.Empty, dependent.Error);
             CollectionAssert.AreEqual(
                 original.Systems[dependentIndex].DependencyIndices, dependent.DependencyIndices);
+        }
+
+        [Test]
+        public async Task Recording_ShouldMarkAutoPromotedSystems()
+        {
+            InitializationGraphRecording.IsEnabled = true;
+            var builder = new InitializationContextBuilder();
+            builder.AddSystem(new SimpleSystem(null));
+            builder.AddSystem(new FieldDependentSystem(null)).SetAsCritical();
+
+            await builder.Build().InitializationAsync(CancellationToken.None);
+
+            InitializationGraphSnapshot snapshot = _snapshots.Single();
+            InitializationSystemRecord simple = snapshot.Systems[IndexOf(snapshot, typeof(SimpleSystem))];
+            InitializationSystemRecord dependent = snapshot.Systems[IndexOf(snapshot, typeof(FieldDependentSystem))];
+
+            Assert.IsTrue(simple.IsCritical, "A dependency of a critical system must be promoted to critical.");
+            Assert.IsTrue(simple.IsAutoCritical, "The promotion must be recorded as automatic.");
+            Assert.IsTrue(dependent.IsCritical);
+            Assert.IsFalse(dependent.IsAutoCritical, "An explicitly marked system is not auto-promoted.");
+
+            InitializationGraphSnapshot restored = InitializationGraphSnapshot.FromXml(snapshot.ToXml(true));
+            Assert.IsTrue(restored.Systems[IndexOf(restored, typeof(SimpleSystem))].IsAutoCritical);
+        }
+
+        [Test]
+        public void FromXml_ShouldDefaultAutoCritical_WhenAttributeIsMissing()
+        {
+            const string xml =
+                "<InitializationGraph recordedAtUtc=\"\" status=\"Completed\" totalMilliseconds=\"1\">" +
+                "<Systems>" +
+                "<System typeName=\"Legacy\" fullTypeName=\"Legacy\" startOrder=\"0\" isCritical=\"true\" " +
+                "status=\"Completed\" startMilliseconds=\"0\" durationMilliseconds=\"1\" />" +
+                "</Systems></InitializationGraph>";
+
+            InitializationSystemRecord record = InitializationGraphSnapshot.FromXml(xml).Systems.Single();
+
+            Assert.IsTrue(record.IsCritical);
+            Assert.IsFalse(record.IsAutoCritical, "Snapshots recorded before the promotion existed must stay readable.");
         }
 
         [Test]

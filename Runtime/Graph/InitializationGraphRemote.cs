@@ -36,7 +36,7 @@ namespace DTech.Pulse
 			Hook();
 		}
 
-		internal static void Publish(InitializationGraphSnapshot snapshot)
+		public static void Publish(InitializationGraphSnapshot snapshot)
 		{
 			if (snapshot == null || Application.isEditor)
 			{
