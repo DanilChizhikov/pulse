@@ -29,7 +29,7 @@ namespace DTech.Pulse.Editor
 		private IMGUIContainer _connectionDropdown;
 		private VisualElement _editorControls;
 		private VisualElement _deviceControls;
-		private ToolbarButton _exportXmlButton;
+		private ToolbarMenu _exportMenu;
 		private Label _summaryLabel;
 		private IConnectionState _connectionState;
 		private RecordedSnapshot _selectedRecorded;
@@ -131,12 +131,14 @@ namespace DTech.Pulse.Editor
 			});
 			toolbar.Add(_deviceControls);
 
-			_exportXmlButton = new ToolbarButton(ExportXmlButtonClickHandler)
+			_exportMenu = new ToolbarMenu
 			{
-				text = "Export XML...",
-				tooltip = "Write the shown graph to an XML file. Graphs are never saved automatically.",
+				text = "Export",
+				tooltip = "Write the shown graph to a file. Graphs are never saved automatically.",
 			};
-			toolbar.Add(_exportXmlButton);
+			_exportMenu.menu.AppendAction("XML...", _ => ExportSnapshot(ExportFormat.Xml));
+			_exportMenu.menu.AppendAction("HTML...", _ => ExportSnapshot(ExportFormat.Html));
+			toolbar.Add(_exportMenu);
 
 			toolbar.Add(new ToolbarButton(FrameAllButtonClickHandler) { text = "Frame All" });
 
@@ -362,31 +364,22 @@ namespace DTech.Pulse.Editor
 		private void ShowSnapshot(InitializationGraphSnapshot snapshot)
 		{
 			_currentSnapshot = snapshot;
-			_exportXmlButton.SetEnabled(true);
+			_exportMenu.SetEnabled(true);
 
-			int levelsCount = InitializationGraphLevels.GetCount(InitializationGraphLevels.Calculate(snapshot));
-			int criticalCount = 0;
-			foreach (bool isCritical in InitializationGraphLevels.ResolveCriticalSystems(snapshot))
-			{
-				if (isCritical)
-				{
-					criticalCount++;
-				}
-			}
-
+			InitializationGraphLayout layout = InitializationGraphLayout.Build(snapshot);
 			_summaryLabel.text = $"{snapshot.Status} · {InitializationTimeFormat.Format(snapshot.TotalMilliseconds)} · " +
-				$"{snapshot.Systems.Count} systems ({criticalCount} critical) · {levelsCount} levels";
-			_graphView.Show(snapshot);
+				$"{snapshot.Systems.Count} systems ({layout.CriticalCount} critical) · {layout.LevelsCount} levels";
+			_graphView.Show(layout);
 		}
 
 		private void ShowEmpty(string message)
 		{
 			_currentSnapshot = null;
-			_exportXmlButton.SetEnabled(false);
+			_exportMenu.SetEnabled(false);
 			_snapshotsMenu.text = DefaultSnapshotsMenuText;
 			_deviceMenu.text = DefaultSnapshotsMenuText;
 			_summaryLabel.text = message;
-			_graphView.Show(null);
+			_graphView.Show(InitializationGraphLayout.Empty);
 		}
 
 		private string GetNoDeviceSnapshotMessage()
@@ -491,17 +484,22 @@ namespace DTech.Pulse.Editor
 			InitializationGraphDeviceSource.RequestSnapshot();
 		}
 
-		private void ExportXmlButtonClickHandler()
+		private void ExportSnapshot(ExportFormat format)
 		{
 			if (_currentSnapshot == null)
 			{
 				return;
 			}
 
+			bool isXml = format == ExportFormat.Xml;
 			string directoryPath = InitializationGraphStorage.DirectoryPath;
 			Directory.CreateDirectory(directoryPath);
 			string fileName = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
-			string path = EditorUtility.SaveFilePanel("Save Initialization Graph", directoryPath, fileName, "xml");
+			string path = EditorUtility.SaveFilePanel(
+				"Save Initialization Graph",
+				directoryPath,
+				fileName,
+				isXml ? "xml" : "html");
 			if (string.IsNullOrEmpty(path))
 			{
 				return;
@@ -509,8 +507,14 @@ namespace DTech.Pulse.Editor
 
 			try
 			{
-				InitializationGraphStorage.Export(_currentSnapshot, path);
-				_selectedPath = path;
+				if (isXml)
+				{
+					InitializationGraphStorage.ExportXml(_currentSnapshot, path);
+					_selectedPath = path;
+					return;
+				}
+
+				InitializationGraphStorage.ExportHtml(_currentSnapshot, path);
 			}
 			catch (Exception exception)
 			{
@@ -527,6 +531,12 @@ namespace DTech.Pulse.Editor
 		{
 			_isShowingAllEdges = changeEvent.newValue;
 			_graphView.IsShowingAllEdges = changeEvent.newValue;
+		}
+
+		private enum ExportFormat
+		{
+			Xml = 0,
+			Html = 1,
 		}
 	}
 }

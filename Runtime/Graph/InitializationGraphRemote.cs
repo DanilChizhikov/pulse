@@ -43,7 +43,7 @@ namespace DTech.Pulse
 				return;
 			}
 
-			string xml = snapshot.ToXml();
+			string xml = InitializationGraphXmlReport.Build(snapshot);
 			_lastSnapshotXml = xml;
 
 			if (Thread.CurrentThread.ManagedThreadId == _mainThreadId)

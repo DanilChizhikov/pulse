@@ -8,7 +8,19 @@ namespace DTech.Pulse.Editor
 	{
 		public static string DirectoryPath => Directory.GetParent(Application.dataPath).FullName;
 
-		public static void Export(InitializationGraphSnapshot snapshot, string path)
+		public static void ExportXml(InitializationGraphSnapshot snapshot, string path)
+		{
+			Validate(snapshot, path);
+			File.WriteAllText(path, InitializationGraphXmlReport.Build(snapshot, true));
+		}
+
+		public static void ExportHtml(InitializationGraphSnapshot snapshot, string path)
+		{
+			Validate(snapshot, path);
+			File.WriteAllText(path, InitializationGraphHtmlReport.Build(snapshot));
+		}
+
+		private static void Validate(InitializationGraphSnapshot snapshot, string path)
 		{
 			if (snapshot == null)
 			{
@@ -19,8 +31,6 @@ namespace DTech.Pulse.Editor
 			{
 				throw new ArgumentException("Path cannot be null or empty.", nameof(path));
 			}
-
-			File.WriteAllText(path, snapshot.ToXml(true));
 		}
 
 		public static InitializationGraphSnapshot Load(string path)

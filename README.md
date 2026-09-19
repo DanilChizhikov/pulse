@@ -313,7 +313,9 @@ runs are not affected.
 3. Open `Window/DTech/Pulse/Initialization Graph` to browse snapshots:
    - the **Snapshots** dropdown lists the recorded runs (`#1 · 14:03:12 · Completed`), newest first, and its `Clear`
      entry drops them;
-   - press **Export XML...** to write the shown graph to a file of your choice, and **Open File...** to read one back;
+   - the **Export** dropdown writes the shown graph to a file of your choice - **XML...** for a snapshot the window
+     can read back through **Open File...**, **HTML...** for a standalone report page (graph with zoom, pan and
+     focus, a plain-language legend, light and dark themes) that opens in any browser and needs no Unity;
    - systems are grouped into columns by their dependency level, and the group title shows the span of the level;
    - edges go from a dependency to the systems that depend on it. Edges already implied by another dependency
      (`A → B → C` makes `A → C` redundant) are hidden; enable **All Edges** in the toolbar to draw them too;
@@ -344,8 +346,9 @@ no files are written on the device and nothing has to be pulled off it.
    - **Request** makes the connected player resend the snapshot it recorded last;
    - the second dropdown lists the received snapshots labelled with the device name, filtered to the selected
      device — enable **Show All Devices** in it to see the whole history;
-   - received snapshots are kept in memory only (the last 20, cleared on a domain reload); press **Export XML...**
-     to write the selected one to disk and reopen it later through `Source: Editor` -> **Open File...**.
+   - received snapshots are kept in memory only (the last 20, cleared on a domain reload); use **Export** ->
+     **XML...** to write the selected one to disk and reopen it later through `Source: Editor` -> **Open File...**,
+     or **Export** -> **HTML...** to get a standalone report page to share.
 
 Notes:
 - The remote channel exists only in development builds (`DEVELOPMENT_BUILD`); release builds neither send nor

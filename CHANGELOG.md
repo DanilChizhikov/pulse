@@ -3,6 +3,11 @@
 ## [2.1.0] - Unreleased
 
 ### Added
+- Initialization Graph window: **Export XML...** became an **Export** dropdown with **XML...** and **HTML...**.
+  The HTML entry writes a standalone report page - one file, no internet access needed - with the same columns,
+  colours and badges as the window, zoom / pan / **Fit**, click-to-focus, a **Show indirect links** toggle,
+  a search field, a panel listing the systems that did not finish, a plain-language legend for non-programmers,
+  and light / dark themes (dark by default, the choice is remembered in the browser).
 - `InitializationSystemRecord.IsAutoCritical` plus the optional `isAutoCritical` XML attribute: tells an
   auto-promoted dependency from an explicitly marked system. Older snapshots without the attribute still load.
 - Initialization Graph window: critical systems occupy the first columns, their groups are titled

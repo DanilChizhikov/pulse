@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEditor.Experimental.GraphView;
@@ -56,44 +55,6 @@ namespace DTech.Pulse.Editor
 			edge.Query<VisualElement>().ForEach(element => element.pickingMode = PickingMode.Ignore);
 		}
 
-		private static int GetStartRank(InitializationSystemRecord system)
-		{
-			return system.StartOrder >= 0 ? system.StartOrder : int.MaxValue;
-		}
-
-		private static string GetLevelTitle(
-			IReadOnlyList<InitializationSystemRecord> systems,
-			bool[] criticalSystems,
-			IGrouping<int, int> level)
-		{
-			bool isCritical = false;
-			bool isStarted = false;
-			double minStartMilliseconds = double.MaxValue;
-			double maxEndMilliseconds = double.MinValue;
-
-			foreach (int index in level)
-			{
-				isCritical |= criticalSystems[index];
-
-				InitializationSystemRecord system = systems[index];
-				if (system.StartOrder < 0)
-				{
-					continue;
-				}
-
-				isStarted = true;
-				minStartMilliseconds = Math.Min(minStartMilliseconds, system.StartMilliseconds);
-				maxEndMilliseconds = Math.Max(
-					maxEndMilliseconds,
-					system.StartMilliseconds + system.DurationMilliseconds);
-			}
-
-			string prefix = isCritical ? "Critical · " : string.Empty;
-			return isStarted
-				? $"{prefix}Level {level.Key} · {InitializationTimeFormat.Format(maxEndMilliseconds - minStartMilliseconds)}"
-				: $"{prefix}Level {level.Key} · not started";
-		}
-
 		private static GraphViewChange GraphViewChangedHandler(GraphViewChange change)
 		{
 			change.elementsToRemove?.Clear();
@@ -128,7 +89,7 @@ namespace DTech.Pulse.Editor
 			UpdateFocus();
 		}
 
-		public void Show(InitializationGraphSnapshot snapshot)
+		public void Show(InitializationGraphLayout layout)
 		{
 			_edges.Clear();
 			_nodes.Clear();
@@ -139,46 +100,33 @@ namespace DTech.Pulse.Editor
 				RemoveElement(element);
 			}
 
-			if (snapshot == null || snapshot.Systems.Count == 0)
+			if (layout == null || layout.Systems.Count == 0)
 			{
 				return;
 			}
 
-			IReadOnlyList<InitializationSystemRecord> systems = snapshot.Systems;
-			double maxDurationMilliseconds = systems.Max(system => system.DurationMilliseconds);
+			IReadOnlyList<InitializationSystemRecord> systems = layout.Systems;
 			var nodes = new InitializationSystemNode[systems.Count];
-			int[] levels = InitializationGraphLevels.Calculate(snapshot);
-			bool[] criticalSystems = InitializationGraphLevels.ResolveCriticalSystems(snapshot);
-			bool[][] redundantDependencies = InitializationGraphReduction.FindRedundantDependencies(systems, levels);
 
-			IEnumerable<IGrouping<int, int>> groupedLevels = Enumerable.Range(0, systems.Count)
-				.GroupBy(index => levels[index])
-				.OrderBy(level => level.Key);
-
-			foreach (IGrouping<int, int> level in groupedLevels)
+			foreach (InitializationGraphLayout.LevelEntry level in layout.LevelEntries)
 			{
-				var group = new Group { title = GetLevelTitle(systems, criticalSystems, level) };
+				var group = new Group { title = level.Title };
 				group.capabilities &= ~Capabilities.Deletable;
 				AddElement(group);
 
-				IEnumerable<int> orderedIndices = level
-					.OrderBy(index => GetStartRank(systems[index]))
-					.ThenBy(index => systems[index].TypeName, StringComparer.Ordinal);
-
-				int row = 0;
-				foreach (int index in orderedIndices)
+				for (int row = 0; row < level.Indices.Length; row++)
 				{
+					int index = level.Indices[row];
 					var node = new InitializationSystemNode(
 						systems[index],
-						levels[index],
-						criticalSystems[index],
-						maxDurationMilliseconds);
-					node.SetPosition(new Rect(level.Key * ColumnWidth, row * RowHeight, 0f, 0f));
+						layout.Levels[index],
+						layout.CriticalSystems[index],
+						layout.MaxDurationMilliseconds);
+					node.SetPosition(new Rect(level.Level * ColumnWidth, row * RowHeight, 0f, 0f));
 					AddElement(node);
 					group.AddElement(node);
 					nodes[index] = node;
 					_nodes.Add(node);
-					row++;
 				}
 			}
 
@@ -196,7 +144,11 @@ namespace DTech.Pulse.Editor
 					Edge edge = nodes[dependencyIndex].Output.ConnectTo(nodes[i].Input);
 					LockEdge(edge);
 					AddElement(edge);
-					_edges.Add(new EdgeEntry(edge, nodes[dependencyIndex], nodes[i], redundantDependencies[i][j]));
+					_edges.Add(new EdgeEntry(
+						edge,
+						nodes[dependencyIndex],
+						nodes[i],
+						layout.IsRedundantDependency(i, j)));
 				}
 			}
 
