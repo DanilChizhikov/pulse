@@ -147,7 +147,8 @@ namespace DTech.Pulse.Tests
             await builder.Build().InitializationAsync(CancellationToken.None);
 
             InitializationGraphSnapshot original = _snapshots.Single();
-            InitializationGraphSnapshot restored = InitializationGraphSnapshot.FromXml(original.ToXml(prettyPrint));
+            string originalXml = InitializationGraphXmlReport.Build(original, prettyPrint);
+            InitializationGraphSnapshot restored = InitializationGraphSnapshot.FromXml(originalXml);
 
             Assert.AreEqual(original.RecordedAtUtc, restored.RecordedAtUtc);
             Assert.AreEqual(original.Status, restored.Status);
@@ -184,7 +185,8 @@ namespace DTech.Pulse.Tests
                 () => context.InitializationAsync(CancellationToken.None).GetAwaiter().GetResult());
 
             InitializationGraphSnapshot original = _snapshots.Single();
-            InitializationGraphSnapshot restored = InitializationGraphSnapshot.FromXml(original.ToXml(true));
+            string originalXml = InitializationGraphXmlReport.Build(original, true);
+            InitializationGraphSnapshot restored = InitializationGraphSnapshot.FromXml(originalXml);
 
             Assert.AreEqual(InitializationGraphStatus.Failed, restored.Status);
 
@@ -220,7 +222,8 @@ namespace DTech.Pulse.Tests
             Assert.IsTrue(dependent.IsCritical);
             Assert.IsFalse(dependent.IsAutoCritical, "An explicitly marked system is not auto-promoted.");
 
-            InitializationGraphSnapshot restored = InitializationGraphSnapshot.FromXml(snapshot.ToXml(true));
+            string xml = InitializationGraphXmlReport.Build(snapshot, true);
+            InitializationGraphSnapshot restored = InitializationGraphSnapshot.FromXml(xml);
             Assert.IsTrue(restored.Systems[IndexOf(restored, typeof(SimpleSystem))].IsAutoCritical);
         }
 
