@@ -23,7 +23,7 @@
   - [InitDependencyAttribute](#initdependencyattribute)
   - [InitializationContextBuilder](#initializationcontextbuilder)
   - [InitializationContext](#initializationcontext)
-  - [IInitializationNodeHandle](#initializationnodehandle)
+  - [IInitializationNodeHandle](#iinitializationnodehandle)
   - [IInitializationFramePacer](#iinitializationframepacer)
   - [InitializationGraphRecording](#initializationgraphrecording)
 - [Dependencies](#dependencies)
@@ -305,7 +305,11 @@ Pulse can record how an initialization actually went: dependencies, start order,
 and status of every system. Recording is **disabled by default** — when it is off, no recorder is created and regular
 runs are not affected.
 
-**In the Editor** (`Source: Editor` in the window toolbar)
+Where the window reads graphs from follows the **connection target** — the first dropdown in the window toolbar,
+the same target picker the Profiler uses. Aimed at the Editor (`Play Mode` / `Edit Mode`) it shows snapshots
+recorded in the Editor; aimed at a connected player it shows the ones received from that device.
+
+**In the Editor** (connection target `Play Mode` / `Edit Mode`)
 1. Enable `Tools/DTech/Pulse/Record Initialization Graph` (stored in `EditorPrefs`).
 2. Enter Play Mode. Every time an `InitializationContext` finishes (completed, cancelled or failed), a snapshot is kept
    **in memory** — nothing is written to disk. Contexts initialized at the same time or in parallel produce one entry
@@ -316,16 +320,18 @@ runs are not affected.
    - the **Export** dropdown writes the shown graph to a file of your choice - **XML...** for a snapshot the window
      can read back through **Open File...**, **HTML...** for a standalone report page (graph with zoom, pan and
      focus, a plain-language legend, light and dark themes) that opens in any browser and needs no Unity;
+   - **Frame All** re-frames the whole graph in the view;
    - systems are grouped into columns by their dependency level, and the group title shows the span of the level;
+     critical systems come first and their groups are titled `Critical · Level N`;
    - edges go from a dependency to the systems that depend on it. Edges already implied by another dependency
-     (`A → B → C` makes `A → C` redundant) are hidden; enable **All Edges** in the toolbar to draw them too;
+     (`A → B → C` makes `A → C` redundant) are hidden; enable **Transitive edges** in the toolbar to draw them too;
    - select one or more systems to see all of their direct edges; systems they are not linked to are dimmed;
    - edges mirror the recorded dependencies and cannot be selected, deleted or reconnected;
    - each node shows start order, level, start offset, duration and status; times below 500 ms are shown
      in milliseconds, longer ones in seconds (`0.51 s`);
    - the node header goes from green (fast) to red (the slowest system); critical systems have a `CRITICAL` badge.
 
-**On a device** (`Source: Device` in the window toolbar)
+**On a device** (connection target set to a connected player)
 
 A development build sends every recorded snapshot straight to the Editor over the
 [player connection](https://docs.unity3d.com/6000.0/Documentation/ScriptReference/Networking.PlayerConnection.PlayerConnection.html) —
@@ -337,18 +343,18 @@ no files are written on the device and nothing has to be pulled off it.
    ```
 2. Make a **Development Build**. With **Autoconnect Profiler** on, the player is attached from the start;
    otherwise pick it in the connection dropdown described below.
-3. Open `Window/DTech/Pulse/Initialization Graph` and switch **Source** to `Device`:
-   - the first toolbar dropdown is the same connection target picker the Profiler uses — every discovered device
-     with a search field, `Play Mode` / `Edit Mode` and `Direct Connection` -> `<Enter IP>`. The connection is
-     global, so choosing a target here also changes it for the Profiler and back;
+3. Open `Window/DTech/Pulse/Initialization Graph` and point the connection dropdown at the player:
+   - it is the same connection target picker the Profiler uses — every discovered device with a search field,
+     `Play Mode` / `Edit Mode` and `Direct Connection` -> `<Enter IP>`. The connection is global, so choosing a
+     target here also changes it for the Profiler and back;
    - a snapshot is requested automatically as soon as a player connects, and snapshots recorded while it is
      connected arrive on their own;
    - **Request** makes the connected player resend the snapshot it recorded last;
    - the second dropdown lists the received snapshots labelled with the device name, filtered to the selected
      device — enable **Show All Devices** in it to see the whole history;
    - received snapshots are kept in memory only (the last 20, cleared on a domain reload); use **Export** ->
-     **XML...** to write the selected one to disk and reopen it later through `Source: Editor` -> **Open File...**,
-     or **Export** -> **HTML...** to get a standalone report page to share.
+     **XML...** to write the selected one to disk and reopen it later with the connection target back on the
+     Editor through **Open File...**, or **Export** -> **HTML...** to get a standalone report page to share.
 
 Notes:
 - The remote channel exists only in development builds (`DEVELOPMENT_BUILD`); release builds neither send nor
@@ -458,7 +464,14 @@ Validation performed during `Build()`:
 ```csharp
 public sealed class InitializationContext
 {
+    public event Action<Type> OnSystemInitializationBegan;
+    public event Action<Type> OnSystemInitializationCompleted;
     public event Action OnCriticalSystemsInitialized;
+
+    public int TotalSystemsCount { get; }
+    public int TotalCriticalSystemsCount { get; }
+    public int InitializedSystemsCount { get; }
+    public int InitializedCriticalSystemsCount { get; }
 
     public Task InitializationAsync(CancellationToken token);
 }
@@ -476,14 +489,14 @@ context.OnSystemInitializationBegan += type =>
 };
 ```
 
-#### OnSystemInitializationComplete
-Event fired when a system complete initialization.
+#### OnSystemInitializationCompleted
+Event fired when a system completes initialization.
 
 **Example:**
 ```csharp
-context.OnSystemInitializationComplete += type =>
+context.OnSystemInitializationCompleted += type =>
 {
-    Debug.Log($"Init {type.Name}...");
+    Debug.Log($"Done: {type.Name}");
 };
 ```
 
@@ -496,6 +509,16 @@ context.OnCriticalSystemsInitialized += () =>
 {
     Debug.Log("All critical systems are ready!");
 };
+```
+
+#### TotalSystemsCount / TotalCriticalSystemsCount
+Number of registered systems, and how many of them are critical (including the ones promoted by
+`SetAsCritical()` propagation). Both are fixed by `Build()`.
+
+#### InitializedSystemsCount / InitializedCriticalSystemsCount
+Number of systems already initialized during the current run — useful to drive a loading bar:
+```csharp
+float progress = (float)context.InitializedSystemsCount / context.TotalSystemsCount;
 ```
 
 #### InitializationAsync(CancellationToken token)
@@ -627,7 +650,7 @@ Global switch for [initialization graph recording](#recording-the-initialization
 When `true`, contexts built afterwards record their initialization graph. Disabled by default.
 In the Editor it is synced with the `Tools/DTech/Pulse/Record Initialization Graph` menu toggle.
 In a development build every recorded snapshot is also sent to the Editor over the player connection and shows up
-in the Initialization Graph window under `Source: Device`.
+in the Initialization Graph window once its connection target is set to that player.
 
 #### OnSnapshotRecorded
 Raised once per recorded `InitializationAsync` run with an `InitializationGraphSnapshot`:

@@ -1,6 +1,6 @@
 # Changelog
 
-## [2.1.0] - Unreleased
+## [2.1.0] - 2026-09-19
 
 ### Added
 - Initialization Graph window: **Export XML...** became an **Export** dropdown with **XML...** and **HTML...**.
@@ -14,13 +14,14 @@
   `Critical · Level N`, auto-promoted ones carry a `CRITICAL (dep)` badge, and the summary shows the critical count.
 - Initialization graphs recorded in a development build are sent to the Editor over the player connection
   (`UnityEngine.Networking.PlayerConnection`); no XML is written on the device anymore.
-- Initialization Graph window: **Source** selector (`Editor` / `Device`). `Device` reads snapshots from the
-  connected player, **Request** asks players to resend the last recorded snapshot, and **Export XML...** stores
-  the selected one on disk.
-- Initialization Graph window: Profiler-style connection dropdown for `Device` - every discovered device with
-  search, `Play Mode` / `Edit Mode` and `Direct Connection`. A snapshot is requested automatically when a
-  player connects, received snapshots are labelled with the device name, and the snapshot list shows only the
-  selected device unless **Show All Devices** is enabled.
+- Initialization Graph window: the graph source follows the Profiler connection target. Pointing the toolbar
+  dropdown at the Editor (`Play Mode` / `Edit Mode`) shows snapshots recorded in the Editor; pointing it at a
+  connected player shows the ones received from that device, and **Export** -> **XML...** stores the selected one
+  on disk.
+- Initialization Graph window: Profiler-style connection dropdown - every discovered device with search,
+  `Play Mode` / `Edit Mode` and `Direct Connection`. A snapshot is requested automatically when a player connects,
+  **Request** asks players to resend the last recorded one, received snapshots are labelled with the device name,
+  and the snapshot list shows only the selected device unless **Show All Devices** is enabled.
 
 ### Changed
 - **Breaking behaviour:** critical systems now run in their own first phase. No non-critical system starts until
@@ -30,6 +31,8 @@
   system becomes critical, and `Build()` logs a single warning listing the promoted systems.
 - `InitializationGraphRecording.Publish` no longer returns early when nothing is subscribed to
   `OnSnapshotRecorded`, so a snapshot still reaches the Editor.
+- Initialization Graph window: the **All Edges** toggle is now called **Transitive edges** - same behaviour,
+  it draws the edges implied by other dependencies while nothing is selected.
 - Documentation: the manual `persistentDataPath` + `adb pull` / Xcode container workflow is replaced by the
   player connection one.
 - **Breaking behaviour:** recorded graphs are no longer written to `Library/Pulse/Graphs` on their own. The Editor
@@ -39,7 +42,8 @@
 ### Removed
 - `Tools/DTech/Pulse/Clear Records` menu item - the in-memory history is dropped by `Clear` in the **Snapshots**
   dropdown instead.
-- Initialization Graph window: the **Refresh** button, which re-read the snapshot folder from disk.
+- Initialization Graph window: the **Refresh** button, which re-read the snapshot folder from disk. Its place in
+  the toolbar is taken by **Frame All**, which re-frames the shown graph.
 - `InitializationGraphStorage.Save` / `GetSnapshotPaths` / `OnSaved` and the rotation that deleted every file past
   the newest 20 in `Library/Pulse/Graphs`.
 
