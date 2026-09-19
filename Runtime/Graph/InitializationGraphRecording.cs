@@ -32,6 +32,11 @@ namespace DTech.Pulse
 		/// </remarks>
 		public static bool IsEnabled { get; set; }
 
+		static InitializationGraphRecording()
+		{
+			IsEnabled = Application.isEditor;
+		}
+
 		internal static void Publish(InitializationGraphSnapshot snapshot)
 		{
 			Action<InitializationGraphSnapshot> handler = OnSnapshotRecorded;

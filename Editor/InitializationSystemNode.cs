@@ -15,6 +15,7 @@ namespace DTech.Pulse.Editor
 		private static readonly Color _failedColor = new(0.95f, 0.2f, 0.2f);
 		private static readonly Color _cancelledColor = new(0.95f, 0.65f, 0.1f);
 		private static readonly Color _criticalColor = new(0.95f, 0.75f, 0.2f);
+		private static readonly Color _autoCriticalColor = new(0.95f, 0.45f, 0.15f);
 
 		public Port Input { get; }
 		public Port Output { get; }
@@ -22,6 +23,7 @@ namespace DTech.Pulse.Editor
 		public InitializationSystemNode(
 			InitializationSystemRecord record,
 			int level,
+			bool isCritical,
 			double maxDurationMilliseconds)
 		{
 			title = record.TypeName;
@@ -34,9 +36,10 @@ namespace DTech.Pulse.Editor
 			Output = CreatePort(Direction.Output, "Required by");
 			outputContainer.Add(Output);
 
-			if (record.IsCritical)
+			if (isCritical)
 			{
-				titleButtonContainer.Insert(0, CreateCriticalBadge());
+				bool isAutoCritical = record.IsAutoCritical || !record.IsCritical;
+				titleButtonContainer.Insert(0, CreateCriticalBadge(isAutoCritical));
 			}
 
 			extensionContainer.Add(CreateDetails(record, level));
@@ -105,10 +108,15 @@ namespace DTech.Pulse.Editor
 			return details;
 		}
 
-		private static Label CreateCriticalBadge()
+		private static Label CreateCriticalBadge(bool isAutoCritical)
 		{
-			var badge = new Label("CRITICAL");
-			badge.style.color = _criticalColor;
+			var badge = new Label(isAutoCritical ? "CRITICAL (dep)" : "CRITICAL");
+			if (isAutoCritical)
+			{
+				badge.tooltip = "Auto-promoted: a critical system depends on it. Mark it with SetAsCritical().";
+			}
+
+			badge.style.color = isAutoCritical ? _autoCriticalColor : _criticalColor;
 			badge.style.unityFontStyleAndWeight = FontStyle.Bold;
 			badge.style.unityTextAlign = TextAnchor.MiddleCenter;
 			badge.style.marginRight = 4f;

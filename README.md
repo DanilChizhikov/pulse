@@ -87,8 +87,12 @@ For example `https://github.com/DanilChizhikov/pulse.git#v2.1.0`.
 
 
 - **Critical systems support**
-  
+
   You can mark systems as `critical`.
+
+  Critical systems are initialized in the first phase of a run: no non-critical system starts until every critical one is done.
+  Criticality is propagated up the dependency chain, so every transitive dependency of a critical system becomes critical too
+  (the builder logs a warning listing the systems it had to promote).
 
   The `InitializationContext` tracks them and raises `OnCriticalSystemsInitialized` once all critical systems are successfully initialized.
 
@@ -303,9 +307,13 @@ runs are not affected.
 
 **In the Editor** (`Source: Editor` in the window toolbar)
 1. Enable `Tools/DTech/Pulse/Record Initialization Graph` (stored in `EditorPrefs`).
-2. Enter Play Mode. Every time an `InitializationContext` finishes (completed, cancelled or failed), a snapshot is saved
-   to `Library/Pulse/Graphs` (the last 20 snapshots are kept).
+2. Enter Play Mode. Every time an `InitializationContext` finishes (completed, cancelled or failed), a snapshot is kept
+   **in memory** — nothing is written to disk. Contexts initialized at the same time or in parallel produce one entry
+   each; the last 20 are kept and the whole history is cleared on a domain reload (script recompile, entering Play Mode).
 3. Open `Window/DTech/Pulse/Initialization Graph` to browse snapshots:
+   - the **Snapshots** dropdown lists the recorded runs (`#1 · 14:03:12 · Completed`), newest first, and its `Clear`
+     entry drops them;
+   - press **Export XML...** to write the shown graph to a file of your choice, and **Open File...** to read one back;
    - systems are grouped into columns by their dependency level, and the group title shows the span of the level;
    - edges go from a dependency to the systems that depend on it. Edges already implied by another dependency
      (`A → B → C` makes `A → C` redundant) are hidden; enable **All Edges** in the toolbar to draw them too;
@@ -336,7 +344,7 @@ no files are written on the device and nothing has to be pulled off it.
    - **Request** makes the connected player resend the snapshot it recorded last;
    - the second dropdown lists the received snapshots labelled with the device name, filtered to the selected
      device — enable **Show All Devices** in it to see the whole history;
-   - received snapshots are kept in memory only (the last 20, cleared on a domain reload); press **Save XML...**
+   - received snapshots are kept in memory only (the last 20, cleared on a domain reload); press **Export XML...**
      to write the selected one to disk and reopen it later through `Source: Editor` -> **Open File...**.
 
 Notes:
@@ -557,10 +565,14 @@ node.RemoveDependencies(typeof(IMySubsystemBase));
 
 #### SetAsCritical()
 Marks this system as **critical**.
-The `InitializationContext` will track it and only raise `OnCriticalSystemsInitialized` once all critical systems are done.
+It is initialized in the first phase of the run, before any non-critical system starts, and
+`OnCriticalSystemsInitialized` is raised once all critical systems are done.
 ```csharp
 builder.AddSystem(db).SetAsCritical();
 ```
+Every transitive dependency of a critical system is promoted to critical automatically — otherwise the critical
+phase could never finish. `Build()` logs a warning listing the promoted systems, and the Initialization Graph
+window marks them with a `CRITICAL (dep)` badge, so you can mark them explicitly.
 
 #### OnStartInitialize(Action<Type> callback) / OnCompleteInitialize(Action<Type> callback)
 Registers callbacks for a particular system:
@@ -619,7 +631,8 @@ Raised once per recorded `InitializationAsync` run with an `InitializationGraphS
 - `Status` — `Completed`, `Cancelled` or `Failed`;
 - `RecordedAtUtc`, `TotalMilliseconds`;
 - `Systems` — per system: `TypeName`, `FullTypeName`, `StartOrder` (`-1` if not started), `IsCritical`,
-  `Status`, `StartMilliseconds`, `DurationMilliseconds`, `DependencyIndices` (indices into `Systems`), `Error`.
+  `IsAutoCritical` (promoted because a critical system depends on it), `Status`, `StartMilliseconds`,
+  `DurationMilliseconds`, `DependencyIndices` (indices into `Systems`), `Error`.
 
 Use `snapshot.ToXml()` / `InitializationGraphSnapshot.FromXml(xml)` to persist and restore snapshots.
 

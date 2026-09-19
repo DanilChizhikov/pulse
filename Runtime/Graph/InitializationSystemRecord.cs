@@ -31,6 +31,12 @@ namespace DTech.Pulse
 		public bool IsCritical { get; }
 
 		/// <summary>
+		/// Whether the system became critical because a critical system depends on it, and not because it was
+		/// explicitly marked as critical.
+		/// </summary>
+		public bool IsAutoCritical { get; }
+
+		/// <summary>
 		/// Final status of the system.
 		/// </summary>
 		public InitializationSystemStatus Status { get; }
@@ -60,6 +66,7 @@ namespace DTech.Pulse
 			string fullTypeName,
 			int startOrder,
 			bool isCritical,
+			bool isAutoCritical,
 			InitializationSystemStatus status,
 			double startMilliseconds,
 			double durationMilliseconds,
@@ -70,6 +77,7 @@ namespace DTech.Pulse
 			FullTypeName = fullTypeName;
 			StartOrder = startOrder;
 			IsCritical = isCritical;
+			IsAutoCritical = isAutoCritical;
 			Status = status;
 			StartMilliseconds = startMilliseconds;
 			DurationMilliseconds = durationMilliseconds;

@@ -65,9 +65,9 @@ namespace DTech.Pulse
 			}
 
 			var root = new XElement(RootElementName,
-				new XAttribute("recordedAtUtc", RecordedAtUtc ?? string.Empty),
-				new XAttribute("status", Status.ToString()),
-				new XAttribute("totalMilliseconds", XmlConvert.ToString(TotalMilliseconds)),
+				new XAttribute(XmlPropertyName.RecordedAtUtc, RecordedAtUtc ?? string.Empty),
+				new XAttribute(XmlPropertyName.Status, Status.ToString()),
+				new XAttribute(XmlPropertyName.TotalMilliseconds, XmlConvert.ToString(TotalMilliseconds)),
 				systemsElement);
 
 			return new XDocument(root)
@@ -96,8 +96,7 @@ namespace DTech.Pulse
 			}
 			catch (XmlException exception)
 			{
-				throw new ArgumentException(
-					"Xml does not contain an initialization graph snapshot.", nameof(xml), exception);
+				throw new ArgumentException("Xml does not contain an initialization graph snapshot.", nameof(xml), exception);
 			}
 
 			if (root == null || root.Name != RootElementName)
@@ -118,32 +117,36 @@ namespace DTech.Pulse
 				}
 
 				return new InitializationGraphSnapshot(
-					ReadString(root, "recordedAtUtc"),
-					ReadEnum<InitializationGraphStatus>(root, "status"),
-					ReadDouble(root, "totalMilliseconds"),
+					ReadString(root, XmlPropertyName.RecordedAtUtc),
+					ReadEnum<InitializationGraphStatus>(root, XmlPropertyName.Status),
+					ReadDouble(root, XmlPropertyName.TotalMilliseconds),
 					systems);
 			}
 			catch (Exception exception) when (exception is FormatException || exception is OverflowException)
 			{
-				throw new ArgumentException(
-					"Xml does not contain an initialization graph snapshot.", nameof(xml), exception);
+				throw new ArgumentException("Xml does not contain an initialization graph snapshot.", nameof(xml), exception);
 			}
 		}
 
 		private static XElement ToElement(InitializationSystemRecord record)
 		{
 			var element = new XElement(SystemElementName,
-				new XAttribute("typeName", record.TypeName ?? string.Empty),
-				new XAttribute("fullTypeName", record.FullTypeName ?? string.Empty),
-				new XAttribute("startOrder", XmlConvert.ToString(record.StartOrder)),
-				new XAttribute("isCritical", XmlConvert.ToString(record.IsCritical)),
-				new XAttribute("status", record.Status.ToString()),
-				new XAttribute("startMilliseconds", XmlConvert.ToString(record.StartMilliseconds)),
-				new XAttribute("durationMilliseconds", XmlConvert.ToString(record.DurationMilliseconds)));
+				new XAttribute(XmlPropertyName.TypeName, record.TypeName ?? string.Empty),
+				new XAttribute(XmlPropertyName.FullTypeName, record.FullTypeName ?? string.Empty),
+				new XAttribute(XmlPropertyName.StartOrder, XmlConvert.ToString(record.StartOrder)),
+				new XAttribute(XmlPropertyName.IsCritical, XmlConvert.ToString(record.IsCritical)),
+				new XAttribute(XmlPropertyName.Status, record.Status.ToString()),
+				new XAttribute(XmlPropertyName.StartMilliseconds, XmlConvert.ToString(record.StartMilliseconds)),
+				new XAttribute(XmlPropertyName.DurationMilliseconds, XmlConvert.ToString(record.DurationMilliseconds)));
+
+			if (record.IsAutoCritical)
+			{
+				element.Add(new XAttribute(XmlPropertyName.IsAutoCritical, XmlConvert.ToString(true)));
+			}
 
 			if (record.DependencyIndices.Count > 0)
 			{
-				element.Add(new XAttribute("dependencies", ToDependencies(record.DependencyIndices)));
+				element.Add(new XAttribute(XmlPropertyName.Dependencies, ToDependencies(record.DependencyIndices)));
 			}
 
 			if (!string.IsNullOrEmpty(record.Error))
@@ -157,14 +160,15 @@ namespace DTech.Pulse
 		private static InitializationSystemRecord ToRecord(XElement element)
 		{
 			return new InitializationSystemRecord(
-				ReadString(element, "typeName"),
-				ReadString(element, "fullTypeName"),
-				ReadInt(element, "startOrder"),
-				ReadBool(element, "isCritical"),
-				ReadEnum<InitializationSystemStatus>(element, "status"),
-				ReadDouble(element, "startMilliseconds"),
-				ReadDouble(element, "durationMilliseconds"),
-				ReadDependencies(element, "dependencies"),
+				ReadString(element, XmlPropertyName.TypeName),
+				ReadString(element, XmlPropertyName.FullTypeName),
+				ReadInt(element, XmlPropertyName.StartOrder),
+				ReadBool(element, XmlPropertyName.IsCritical),
+				ReadBool(element, XmlPropertyName.IsAutoCritical),
+				ReadEnum<InitializationSystemStatus>(element, XmlPropertyName.Status),
+				ReadDouble(element, XmlPropertyName.StartMilliseconds),
+				ReadDouble(element, XmlPropertyName.DurationMilliseconds),
+				ReadDependencies(element, XmlPropertyName.Dependencies),
 				element.Element(ErrorElementName)?.Value);
 		}
 

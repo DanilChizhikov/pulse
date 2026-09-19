@@ -20,6 +20,12 @@ namespace DTech.Pulse
 
 		public bool IsCritical { get; private set; }
 
+		/// <summary>
+		/// Whether the node became critical because a critical system depends on it, and not because of an explicit
+		/// <see cref="SetAsCritical"/> call.
+		/// </summary>
+		public bool IsAutoCritical { get; private set; }
+
 		private bool _isProcessed;
 
 		internal InitializationNode(IInitializable system)
@@ -27,6 +33,7 @@ namespace DTech.Pulse
 			_system = system ?? throw new ArgumentNullException(nameof(system));
 			SystemType = _system.GetType();
 			IsCritical = false;
+			IsAutoCritical = false;
 			_dependencies = new HashSet<Type>();
 			_removedDependencies = new HashSet<Type>();
 		}
@@ -168,6 +175,18 @@ namespace DTech.Pulse
 				OnInitializeStarted = null;
 				OnInitializeCompleted = null;
 			}
+		}
+
+		internal bool PromoteToCritical()
+		{
+			if (IsCritical)
+			{
+				return false;
+			}
+
+			IsCritical = true;
+			IsAutoCritical = true;
+			return true;
 		}
 
 		internal void SetProcessed() => _isProcessed = true;

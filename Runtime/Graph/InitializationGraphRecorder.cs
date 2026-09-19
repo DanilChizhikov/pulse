@@ -87,6 +87,7 @@ namespace DTech.Pulse
 					system.FullTypeName,
 					system.StartOrder,
 					system.IsCritical,
+					system.IsAutoCritical,
 					system.Status,
 					isStarted ? ToMilliseconds(system.StartTimestamp - _startTimestamp) : 0d,
 					isStarted ? ToMilliseconds(systemEndTimestamp - system.StartTimestamp) : 0d,
@@ -113,6 +114,7 @@ namespace DTech.Pulse
 			public string TypeName { get; }
 			public string FullTypeName { get; }
 			public bool IsCritical { get; }
+			public bool IsAutoCritical { get; }
 			public List<int> DependencyIndices { get; } = new();
 
 			public int StartOrder { get; set; } = -1;
@@ -127,6 +129,7 @@ namespace DTech.Pulse
 				TypeName = node.SystemType.Name;
 				FullTypeName = node.SystemType.FullName;
 				IsCritical = node.IsCritical;
+				IsAutoCritical = node.IsAutoCritical;
 			}
 		}
 	}

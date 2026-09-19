@@ -10,9 +10,11 @@ namespace DTech.Pulse
 	/// Ready-to-run initialization plan built by <see cref="InitializationContextBuilder"/>.
 	/// </summary>
 	/// <remarks>
-	/// Scheduling is dependency-driven: every system starts as soon as its own dependencies are initialized,
-	/// so an unrelated slow system never holds the rest of the graph back. The duration of a run is therefore
-	/// the length of the critical path. A context can be executed only once.
+	/// A run has two phases. The first one initializes every critical system (see
+	/// <see cref="IInitializationNodeHandle.SetAsCritical"/>); the remaining systems are held back until the last
+	/// critical one is done. Inside a phase scheduling is dependency-driven: a system starts as soon as its own
+	/// dependencies are initialized, so an unrelated slow system never holds the rest of the phase back.
+	/// A context can be executed only once.
 	/// </remarks>
 	[Preserve]
 	public sealed class InitializationContext
@@ -34,6 +36,7 @@ namespace DTech.Pulse
 
 		private readonly object _gate = new();
 
+		private readonly List<int> _deferredSystems = new();
 		private readonly InitializationNode[] _nodes;
 		private readonly int[] _blockingDependencies;
 		private readonly int[][] _dependents;
@@ -70,6 +73,7 @@ namespace DTech.Pulse
 		private bool _isFailed;
 		private bool _isCancelled;
 		private bool _isCriticalSystemsInitializedEventInvoked;
+		private bool _isCriticalPhaseCompleted;
 
 		internal InitializationContext(
 			InitializationNode[] nodes,
@@ -90,6 +94,7 @@ namespace DTech.Pulse
 			InitializedSystemsCount = 0;
 			InitializedCriticalSystemsCount = 0;
 			_remainingCriticalSystemsCount = criticalSystemsCount;
+			_isCriticalPhaseCompleted = criticalSystemsCount == 0;
 		}
 
 		/// <summary>
@@ -146,12 +151,12 @@ namespace DTech.Pulse
 			{
 				for (int i = 0; i < _nodes.Length; i++)
 				{
-					if (_blockingDependencies[i] != 0 || !TryReserveSystem(i, token))
+					if (_blockingDependencies[i] != 0)
 					{
 						continue;
 					}
 
-					(readySystems ??= new List<int>()).Add(i);
+					TryScheduleSystem(i, token, ref readySystems);
 				}
 			}
 
@@ -172,16 +177,55 @@ namespace DTech.Pulse
 				for (int i = 0; i < dependents.Length; i++)
 				{
 					int dependentIndex = dependents[i];
-					if (--_blockingDependencies[dependentIndex] != 0 || !TryReserveSystem(dependentIndex, token))
+					if (--_blockingDependencies[dependentIndex] != 0)
 					{
 						continue;
 					}
 
-					(readySystems ??= new List<int>()).Add(dependentIndex);
+					TryScheduleSystem(dependentIndex, token, ref readySystems);
 				}
 			}
 
 			RunSystems(readySystems, token);
+		}
+
+		/// <remarks>Must be called under <see cref="_gate"/>.</remarks>
+		private void TryScheduleSystem(int index, CancellationToken token, ref List<int> readySystems)
+		{
+			if (!_isCriticalPhaseCompleted && !_nodes[index].IsCritical)
+			{
+				_deferredSystems.Add(index);
+				return;
+			}
+
+			if (!TryReserveSystem(index, token))
+			{
+				return;
+			}
+
+			(readySystems ??= new List<int>()).Add(index);
+		}
+
+		private List<int> ReleaseDeferredSystems(CancellationToken token)
+		{
+			List<int> readySystems = null;
+			lock (_gate)
+			{
+				for (int i = 0; i < _deferredSystems.Count; i++)
+				{
+					int index = _deferredSystems[i];
+					if (!TryReserveSystem(index, token))
+					{
+						continue;
+					}
+
+					(readySystems ??= new List<int>()).Add(index);
+				}
+
+				_deferredSystems.Clear();
+			}
+
+			return readySystems;
 		}
 
 		private void RunSystems(List<int> systems, CancellationToken token)
@@ -217,6 +261,7 @@ namespace DTech.Pulse
 				if (shouldInvokeCriticalSystemsEvent)
 				{
 					OnCriticalSystemsInitialized?.Invoke();
+					RunSystems(ReleaseDeferredSystems(token), token);
 				}
 
 				if (_dependents[index].Length > 0)
@@ -320,6 +365,7 @@ namespace DTech.Pulse
 				return false;
 			}
 
+			_isCriticalPhaseCompleted = true;
 			_isCriticalSystemsInitializedEventInvoked = true;
 			return true;
 		}
