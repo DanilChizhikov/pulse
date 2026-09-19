@@ -35,12 +35,12 @@ namespace DTech.Pulse.Editor
 			EditorConnection.instance.Send(InitializationGraphRemote.RequestMessageId, Array.Empty<byte>());
 		}
 
-		public static void RequestSnapshot(int playerId)
+		private static void RequestSnapshot(int playerId)
 		{
 			EditorConnection.instance.Send(InitializationGraphRemote.RequestMessageId, Array.Empty<byte>(), playerId);
 		}
 
-		public static string GetPlayerName(int playerId)
+		private static string GetPlayerName(int playerId)
 		{
 			List<ConnectedPlayer> players = EditorConnection.instance.ConnectedPlayers;
 			if (players == null)
