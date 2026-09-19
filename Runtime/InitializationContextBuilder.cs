@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using UnityEngine;
 using UnityEngine.Scripting;
 
 namespace DTech.Pulse
@@ -131,6 +132,7 @@ namespace DTech.Pulse
 			}
 
 			var dependentLists = new List<int>[count];
+			var dependencyLists = new List<int>[count];
 			for (int i = 0; i < count; i++)
 			{
 				InitializationNode node = nodes[i];
@@ -140,12 +142,8 @@ namespace DTech.Pulse
 					InitializationNode dependencyNode = ResolveDependencyNode(node, dependencies[j]);
 					int dependencyIndex = indices[dependencyNode];
 					(dependentLists[dependencyIndex] ??= new List<int>()).Add(i);
+					(dependencyLists[i] ??= new List<int>()).Add(dependencyIndex);
 					blockingDependencies[i]++;
-				}
-
-				if (node.IsCritical)
-				{
-					criticalSystemsCount++;
 				}
 			}
 
@@ -155,6 +153,59 @@ namespace DTech.Pulse
 			}
 
 			ValidateNoCycles(nodes, blockingDependencies, dependents);
+			PromoteCriticalDependencies(nodes, dependencyLists);
+
+			for (int i = 0; i < count; i++)
+			{
+				if (nodes[i].IsCritical)
+				{
+					criticalSystemsCount++;
+				}
+			}
+		}
+
+		private static void PromoteCriticalDependencies(InitializationNode[] nodes, List<int>[] dependencyLists)
+		{
+			var queue = new Queue<int>();
+			for (int i = 0; i < nodes.Length; i++)
+			{
+				if (nodes[i].IsCritical)
+				{
+					queue.Enqueue(i);
+				}
+			}
+
+			List<string> promotedNames = null;
+			while (queue.Count > 0)
+			{
+				List<int> dependencies = dependencyLists[queue.Dequeue()];
+				if (dependencies == null)
+				{
+					continue;
+				}
+
+				for (int i = 0; i < dependencies.Count; i++)
+				{
+					int dependencyIndex = dependencies[i];
+					if (!nodes[dependencyIndex].PromoteToCritical())
+					{
+						continue;
+					}
+
+					(promotedNames ??= new List<string>()).Add(nodes[dependencyIndex].SystemType.FullName);
+					queue.Enqueue(dependencyIndex);
+				}
+			}
+
+			if (promotedNames == null)
+			{
+				return;
+			}
+
+			Debug.LogWarning(
+				$"Pulse: {promotedNames.Count} system(s) were auto-promoted to critical because a critical system " +
+				$"depends on them: {string.Join(", ", promotedNames)}. " +
+				"Mark them with SetAsCritical() explicitly.");
 		}
 
 		private static void ValidateNoCycles(

@@ -13,12 +13,12 @@ namespace DTech.Pulse
 	[Preserve]
 	public sealed class InitializationGraphSnapshot
 	{
-		private const string RootElementName = "InitializationGraph";
-		private const string SystemsElementName = "Systems";
-		private const string SystemElementName = "System";
-		private const string ErrorElementName = "Error";
-		private const char DependencySeparator = ' ';
-
+		internal const string RootElementName = "InitializationGraph";
+		internal const string SystemsElementName = "Systems";
+		internal const string SystemElementName = "System";
+		internal const string ErrorElementName = "Error";
+		internal const char DependencySeparator = ' ';
+		
 		/// <summary>
 		/// UTC time the snapshot was recorded at, in round-trip ("O") format.
 		/// </summary>
@@ -52,32 +52,9 @@ namespace DTech.Pulse
 		}
 
 		/// <summary>
-		/// Serializes the snapshot to XML.
-		/// </summary>
-		/// <param name="prettyPrint">Whether the XML should be formatted for reading.</param>
-		/// <returns>The XML representation of the snapshot.</returns>
-		public string ToXml(bool prettyPrint = false)
-		{
-			var systemsElement = new XElement(SystemsElementName);
-			foreach (InitializationSystemRecord system in Systems)
-			{
-				systemsElement.Add(ToElement(system));
-			}
-
-			var root = new XElement(RootElementName,
-				new XAttribute("recordedAtUtc", RecordedAtUtc ?? string.Empty),
-				new XAttribute("status", Status.ToString()),
-				new XAttribute("totalMilliseconds", XmlConvert.ToString(TotalMilliseconds)),
-				systemsElement);
-
-			return new XDocument(root)
-				.ToString(prettyPrint ? SaveOptions.None : SaveOptions.DisableFormatting);
-		}
-
-		/// <summary>
 		/// Restores a snapshot from its XML representation.
 		/// </summary>
-		/// <param name="xml">XML produced by <see cref="ToXml"/>.</param>
+		/// <param name="xml">XML produced.</param>
 		/// <returns>The deserialized snapshot.</returns>
 		/// <exception cref="ArgumentException">
 		/// Thrown when <paramref name="xml"/> is null, empty or does not contain a snapshot.
@@ -96,8 +73,7 @@ namespace DTech.Pulse
 			}
 			catch (XmlException exception)
 			{
-				throw new ArgumentException(
-					"Xml does not contain an initialization graph snapshot.", nameof(xml), exception);
+				throw new ArgumentException("Xml does not contain an initialization graph snapshot.", nameof(xml), exception);
 			}
 
 			if (root == null || root.Name != RootElementName)
@@ -118,70 +94,30 @@ namespace DTech.Pulse
 				}
 
 				return new InitializationGraphSnapshot(
-					ReadString(root, "recordedAtUtc"),
-					ReadEnum<InitializationGraphStatus>(root, "status"),
-					ReadDouble(root, "totalMilliseconds"),
+					ReadString(root, XmlPropertyName.RecordedAtUtc),
+					ReadEnum<InitializationGraphStatus>(root, XmlPropertyName.Status),
+					ReadDouble(root, XmlPropertyName.TotalMilliseconds),
 					systems);
 			}
 			catch (Exception exception) when (exception is FormatException || exception is OverflowException)
 			{
-				throw new ArgumentException(
-					"Xml does not contain an initialization graph snapshot.", nameof(xml), exception);
+				throw new ArgumentException("Xml does not contain an initialization graph snapshot.", nameof(xml), exception);
 			}
-		}
-
-		private static XElement ToElement(InitializationSystemRecord record)
-		{
-			var element = new XElement(SystemElementName,
-				new XAttribute("typeName", record.TypeName ?? string.Empty),
-				new XAttribute("fullTypeName", record.FullTypeName ?? string.Empty),
-				new XAttribute("startOrder", XmlConvert.ToString(record.StartOrder)),
-				new XAttribute("isCritical", XmlConvert.ToString(record.IsCritical)),
-				new XAttribute("status", record.Status.ToString()),
-				new XAttribute("startMilliseconds", XmlConvert.ToString(record.StartMilliseconds)),
-				new XAttribute("durationMilliseconds", XmlConvert.ToString(record.DurationMilliseconds)));
-
-			if (record.DependencyIndices.Count > 0)
-			{
-				element.Add(new XAttribute("dependencies", ToDependencies(record.DependencyIndices)));
-			}
-
-			if (!string.IsNullOrEmpty(record.Error))
-			{
-				element.Add(new XElement(ErrorElementName, record.Error));
-			}
-
-			return element;
 		}
 
 		private static InitializationSystemRecord ToRecord(XElement element)
 		{
 			return new InitializationSystemRecord(
-				ReadString(element, "typeName"),
-				ReadString(element, "fullTypeName"),
-				ReadInt(element, "startOrder"),
-				ReadBool(element, "isCritical"),
-				ReadEnum<InitializationSystemStatus>(element, "status"),
-				ReadDouble(element, "startMilliseconds"),
-				ReadDouble(element, "durationMilliseconds"),
-				ReadDependencies(element, "dependencies"),
+				ReadString(element, XmlPropertyName.TypeName),
+				ReadString(element, XmlPropertyName.FullTypeName),
+				ReadInt(element, XmlPropertyName.StartOrder),
+				ReadBool(element, XmlPropertyName.IsCritical),
+				ReadBool(element, XmlPropertyName.IsAutoCritical),
+				ReadEnum<InitializationSystemStatus>(element, XmlPropertyName.Status),
+				ReadDouble(element, XmlPropertyName.StartMilliseconds),
+				ReadDouble(element, XmlPropertyName.DurationMilliseconds),
+				ReadDependencies(element, XmlPropertyName.Dependencies),
 				element.Element(ErrorElementName)?.Value);
-		}
-
-		private static string ToDependencies(IReadOnlyList<int> indices)
-		{
-			var builder = new StringBuilder();
-			for (int i = 0; i < indices.Count; i++)
-			{
-				if (i > 0)
-				{
-					builder.Append(DependencySeparator);
-				}
-
-				builder.Append(XmlConvert.ToString(indices[i]));
-			}
-
-			return builder.ToString();
 		}
 
 		private static string ReadString(XElement element, string attributeName)

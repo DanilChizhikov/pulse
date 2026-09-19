@@ -1,6 +1,8 @@
 # Pulse
 [![Unity Version](https://img.shields.io/badge/unity-6000.0+-000.svg)](https://unity3d.com/get-unity/download/archive)
 ![Unity Tests](https://github.com/DanilChizhikov/pulse/actions/workflows/tests.yml/badge.svg?branch=master)
+[![openupm](https://img.shields.io/npm/v/com.dtech.pulse?label=openupm&registry_uri=https://package.openupm.com)](https://openupm.com/packages/com.dtech.pulse/)
+[![openupm](https://img.shields.io/badge/dynamic/json?color=brightgreen&label=downloads&query=%24.downloads&suffix=%2Fmonth&url=https%3A%2F%2Fpackage.openupm.com%2Fdownloads%2Fpoint%2Flast-month%2Fcom.dtech.pulse)](https://openupm.com/packages/com.dtech.pulse/)
 
 ## Table of Contents
 - [Getting Started](#getting-started)
@@ -21,7 +23,7 @@
   - [InitDependencyAttribute](#initdependencyattribute)
   - [InitializationContextBuilder](#initializationcontextbuilder)
   - [InitializationContext](#initializationcontext)
-  - [IInitializationNodeHandle](#initializationnodehandle)
+  - [IInitializationNodeHandle](#iinitializationnodehandle)
   - [IInitializationFramePacer](#iinitializationframepacer)
   - [InitializationGraphRecording](#initializationgraphrecording)
 - [Dependencies](#dependencies)
@@ -45,9 +47,9 @@
     ```
 3. Unity will automatically import the package.
 
-If you want to set a target version, Pulse uses the `v*.*.*` release tag so you can specify a version like #v2.0.0.
+If you want to set a target version, Pulse uses the `v*.*.*` release tag so you can specify a version like #v2.1.0.
 
-For example `https://github.com/DanilChizhikov/pulse.git#v2.0.0`.
+For example `https://github.com/DanilChizhikov/pulse.git#v2.1.0`.
 
 ## Features
 - **Attribute–based dependency discovery**
@@ -85,8 +87,12 @@ For example `https://github.com/DanilChizhikov/pulse.git#v2.0.0`.
 
 
 - **Critical systems support**
-  
+
   You can mark systems as `critical`.
+
+  Critical systems are initialized in the first phase of a run: no non-critical system starts until every critical one is done.
+  Criticality is propagated up the dependency chain, so every transitive dependency of a critical system becomes critical too
+  (the builder logs a warning listing the systems it had to promote).
 
   The `InitializationContext` tracks them and raises `OnCriticalSystemsInitialized` once all critical systems are successfully initialized.
 
@@ -120,6 +126,7 @@ For example `https://github.com/DanilChizhikov/pulse.git#v2.0.0`.
 
   Record dependencies, start order and timings of every system and inspect them in a GraphView window
   (`Window/DTech/Pulse/Initialization Graph`). Disabled by default, so it doesn't affect regular runs.
+  Graphs recorded in a development build are read straight from the connected player over the player connection.
 
 ## Runtime compatibility
 
@@ -298,56 +305,63 @@ Pulse can record how an initialization actually went: dependencies, start order,
 and status of every system. Recording is **disabled by default** — when it is off, no recorder is created and regular
 runs are not affected.
 
-**In the Editor**
+Where the window reads graphs from follows the **connection target** — the first dropdown in the window toolbar,
+the same target picker the Profiler uses. Aimed at the Editor (`Play Mode` / `Edit Mode`) it shows snapshots
+recorded in the Editor; aimed at a connected player it shows the ones received from that device.
+
+**In the Editor** (connection target `Play Mode` / `Edit Mode`)
 1. Enable `Tools/DTech/Pulse/Record Initialization Graph` (stored in `EditorPrefs`).
-2. Enter Play Mode. Every time an `InitializationContext` finishes (completed, cancelled or failed), a snapshot is saved
-   to `Library/Pulse/Graphs` (the last 20 snapshots are kept).
+2. Enter Play Mode. Every time an `InitializationContext` finishes (completed, cancelled or failed), a snapshot is kept
+   **in memory** — nothing is written to disk. Contexts initialized at the same time or in parallel produce one entry
+   each; the last 20 are kept and the whole history is cleared on a domain reload (script recompile, entering Play Mode).
 3. Open `Window/DTech/Pulse/Initialization Graph` to browse snapshots:
+   - the **Snapshots** dropdown lists the recorded runs (`#1 · 14:03:12 · Completed`), newest first, and its `Clear`
+     entry drops them;
+   - the **Export** dropdown writes the shown graph to a file of your choice - **XML...** for a snapshot the window
+     can read back through **Open File...**, **HTML...** for a standalone report page (graph with zoom, pan and
+     focus, a plain-language legend, light and dark themes) that opens in any browser and needs no Unity;
+   - **Frame All** re-frames the whole graph in the view;
    - systems are grouped into columns by their dependency level, and the group title shows the span of the level;
+     critical systems come first and their groups are titled `Critical · Level N`;
    - edges go from a dependency to the systems that depend on it. Edges already implied by another dependency
-     (`A → B → C` makes `A → C` redundant) are hidden; enable **All Edges** in the toolbar to draw them too;
+     (`A → B → C` makes `A → C` redundant) are hidden; enable **Transitive edges** in the toolbar to draw them too;
    - select one or more systems to see all of their direct edges; systems they are not linked to are dimmed;
    - edges mirror the recorded dependencies and cannot be selected, deleted or reconnected;
    - each node shows start order, level, start offset, duration and status; times below 500 ms are shown
      in milliseconds, longer ones in seconds (`0.51 s`);
    - the node header goes from green (fast) to red (the slowest system); critical systems have a `CRITICAL` badge.
 
-**From code (e.g. in a player build)**
-```csharp
-InitializationGraphRecording.IsEnabled = true; // must be set before builder.Build()
+**On a device** (connection target set to a connected player)
 
-string path = Path.Combine(Application.persistentDataPath, "pulse-graph.xml");
+A development build sends every recorded snapshot straight to the Editor over the
+[player connection](https://docs.unity3d.com/6000.0/Documentation/ScriptReference/Networking.PlayerConnection.PlayerConnection.html) —
+no files are written on the device and nothing has to be pulled off it.
 
-//Can be called from non-main thread
-InitializationGraphRecording.OnSnapshotRecorded += snapshot =>
-{
-    File.WriteAllText(path, snapshot.ToXml(true));
-};
-```
-Copy the XML to your machine and load it with **Open File...** in the Initialization Graph window.
-
-**Getting the file off the device**
-
-Android (`persistentDataPath` is `/storage/emulated/0/Android/data/<package-name>/files`):
-```bash
-adb shell run-as <package-name> ls files                       # sanity check for non-debuggable paths
-adb pull /storage/emulated/0/Android/data/<package-name>/files/pulse-graph.xml .
-```
-For a non-debuggable release build the app-private path is not readable over `adb pull`; either use a debuggable
-build, or write the snapshot somewhere you can read (`adb shell run-as <package-name> cat files/pulse-graph.xml > pulse-graph.xml`).
-
-iOS (`persistentDataPath` is `<app container>/Documents`):
-1. Xcode -> `Window/Devices and Simulators` -> select the device -> **Installed Apps** -> select the app.
-2. `...` (gear) -> **Download Container...** and save the `.xcappdata` bundle.
-3. Right-click the bundle -> **Show Package Contents** -> `AppData/Documents/pulse-graph.xml`.
-
-The app has to be installed with a development profile for **Download Container** to be available. If you want the
-file to show up in the Files app instead, enable `UIFileSharingEnabled` / `LSSupportsOpeningDocumentsInPlace` in
-`Info.plist` and copy it out over USB.
+1. Enable recording before the context is built:
+   ```csharp
+   InitializationGraphRecording.IsEnabled = true; // must be set before builder.Build()
+   ```
+2. Make a **Development Build**. With **Autoconnect Profiler** on, the player is attached from the start;
+   otherwise pick it in the connection dropdown described below.
+3. Open `Window/DTech/Pulse/Initialization Graph` and point the connection dropdown at the player:
+   - it is the same connection target picker the Profiler uses — every discovered device with a search field,
+     `Play Mode` / `Edit Mode` and `Direct Connection` -> `<Enter IP>`. The connection is global, so choosing a
+     target here also changes it for the Profiler and back;
+   - a snapshot is requested automatically as soon as a player connects, and snapshots recorded while it is
+     connected arrive on their own;
+   - **Request** makes the connected player resend the snapshot it recorded last;
+   - the second dropdown lists the received snapshots labelled with the device name, filtered to the selected
+     device — enable **Show All Devices** in it to see the whole history;
+   - received snapshots are kept in memory only (the last 20, cleared on a domain reload); use **Export** ->
+     **XML...** to write the selected one to disk and reopen it later with the connection target back on the
+     Editor through **Open File...**, or **Export** -> **HTML...** to get a standalone report page to share.
 
 Notes:
+- The remote channel exists only in development builds (`DEVELOPMENT_BUILD`); release builds neither send nor
+  compile it in.
 - `IsEnabled` is read once per `Build()` call.
-- `OnSnapshotRecorded` may be raised on a non-main thread if your systems continue on the thread pool.
+- `OnSnapshotRecorded` may be raised on a non-main thread if your systems continue on the thread pool
+  (sending to the Editor is deferred to the main thread internally).
 - The measured duration of a system includes its callbacks (`OnStartInitialize` / `OnCompleteInitialize` and context events).
 
 ## API Reference
@@ -450,7 +464,14 @@ Validation performed during `Build()`:
 ```csharp
 public sealed class InitializationContext
 {
+    public event Action<Type> OnSystemInitializationBegan;
+    public event Action<Type> OnSystemInitializationCompleted;
     public event Action OnCriticalSystemsInitialized;
+
+    public int TotalSystemsCount { get; }
+    public int TotalCriticalSystemsCount { get; }
+    public int InitializedSystemsCount { get; }
+    public int InitializedCriticalSystemsCount { get; }
 
     public Task InitializationAsync(CancellationToken token);
 }
@@ -468,14 +489,14 @@ context.OnSystemInitializationBegan += type =>
 };
 ```
 
-#### OnSystemInitializationComplete
-Event fired when a system complete initialization.
+#### OnSystemInitializationCompleted
+Event fired when a system completes initialization.
 
 **Example:**
 ```csharp
-context.OnSystemInitializationComplete += type =>
+context.OnSystemInitializationCompleted += type =>
 {
-    Debug.Log($"Init {type.Name}...");
+    Debug.Log($"Done: {type.Name}");
 };
 ```
 
@@ -488,6 +509,16 @@ context.OnCriticalSystemsInitialized += () =>
 {
     Debug.Log("All critical systems are ready!");
 };
+```
+
+#### TotalSystemsCount / TotalCriticalSystemsCount
+Number of registered systems, and how many of them are critical (including the ones promoted by
+`SetAsCritical()` propagation). Both are fixed by `Build()`.
+
+#### InitializedSystemsCount / InitializedCriticalSystemsCount
+Number of systems already initialized during the current run — useful to drive a loading bar:
+```csharp
+float progress = (float)context.InitializedSystemsCount / context.TotalSystemsCount;
 ```
 
 #### InitializationAsync(CancellationToken token)
@@ -560,10 +591,14 @@ node.RemoveDependencies(typeof(IMySubsystemBase));
 
 #### SetAsCritical()
 Marks this system as **critical**.
-The `InitializationContext` will track it and only raise `OnCriticalSystemsInitialized` once all critical systems are done.
+It is initialized in the first phase of the run, before any non-critical system starts, and
+`OnCriticalSystemsInitialized` is raised once all critical systems are done.
 ```csharp
 builder.AddSystem(db).SetAsCritical();
 ```
+Every transitive dependency of a critical system is promoted to critical automatically — otherwise the critical
+phase could never finish. `Build()` logs a warning listing the promoted systems, and the Initialization Graph
+window marks them with a `CRITICAL (dep)` badge, so you can mark them explicitly.
 
 #### OnStartInitialize(Action<Type> callback) / OnCompleteInitialize(Action<Type> callback)
 Registers callbacks for a particular system:
@@ -614,13 +649,16 @@ Global switch for [initialization graph recording](#recording-the-initialization
 #### IsEnabled
 When `true`, contexts built afterwards record their initialization graph. Disabled by default.
 In the Editor it is synced with the `Tools/DTech/Pulse/Record Initialization Graph` menu toggle.
+In a development build every recorded snapshot is also sent to the Editor over the player connection and shows up
+in the Initialization Graph window once its connection target is set to that player.
 
 #### OnSnapshotRecorded
 Raised once per recorded `InitializationAsync` run with an `InitializationGraphSnapshot`:
 - `Status` — `Completed`, `Cancelled` or `Failed`;
 - `RecordedAtUtc`, `TotalMilliseconds`;
 - `Systems` — per system: `TypeName`, `FullTypeName`, `StartOrder` (`-1` if not started), `IsCritical`,
-  `Status`, `StartMilliseconds`, `DurationMilliseconds`, `DependencyIndices` (indices into `Systems`), `Error`.
+  `IsAutoCritical` (promoted because a critical system depends on it), `Status`, `StartMilliseconds`,
+  `DurationMilliseconds`, `DependencyIndices` (indices into `Systems`), `Error`.
 
 Use `snapshot.ToXml()` / `InitializationGraphSnapshot.FromXml(xml)` to persist and restore snapshots.
 

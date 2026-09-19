@@ -1,69 +1,41 @@
 using System;
-using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
-using System.Linq;
 using UnityEngine;
 
 namespace DTech.Pulse.Editor
 {
 	internal static class InitializationGraphStorage
 	{
-		private const int MaxStoredSnapshots = 20;
-		private const string FileExtension = ".xml";
+		public static string DirectoryPath => Directory.GetParent(Application.dataPath).FullName;
 
-		public static event Action<string> OnSaved;
+		public static void ExportXml(InitializationGraphSnapshot snapshot, string path)
+		{
+			Validate(snapshot, path);
+			File.WriteAllText(path, InitializationGraphXmlReport.Build(snapshot, true));
+		}
 
-		public static string DirectoryPath =>
-			Path.Combine(Directory.GetParent(Application.dataPath).FullName, "Library", "Pulse", "Graphs");
+		public static void ExportHtml(InitializationGraphSnapshot snapshot, string path)
+		{
+			Validate(snapshot, path);
+			File.WriteAllText(path, InitializationGraphHtmlReport.Build(snapshot));
+		}
 
-		public static void Save(InitializationGraphSnapshot snapshot)
+		private static void Validate(InitializationGraphSnapshot snapshot, string path)
 		{
 			if (snapshot == null)
 			{
 				throw new ArgumentNullException(nameof(snapshot));
 			}
 
-			string directoryPath = DirectoryPath;
-			Directory.CreateDirectory(directoryPath);
-
-			string fileName = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff", CultureInfo.InvariantCulture);
-			string path = Path.Combine(directoryPath, fileName + FileExtension);
-			for (int suffix = 1; File.Exists(path); suffix++)
+			if (string.IsNullOrEmpty(path))
 			{
-				path = Path.Combine(directoryPath, $"{fileName}_{suffix}{FileExtension}");
+				throw new ArgumentException("Path cannot be null or empty.", nameof(path));
 			}
-
-			File.WriteAllText(path, snapshot.ToXml(true));
-			TrimOldSnapshots();
-			OnSaved?.Invoke(path);
-		}
-		
-		public static IReadOnlyList<string> GetSnapshotPaths()
-		{
-			string directoryPath = DirectoryPath;
-			if (!Directory.Exists(directoryPath))
-			{
-				return Array.Empty<string>();
-			}
-
-			return Directory.GetFiles(directoryPath, "*" + FileExtension)
-				.OrderByDescending(path => Path.GetFileName(path), StringComparer.Ordinal)
-				.ToArray();
 		}
 
 		public static InitializationGraphSnapshot Load(string path)
 		{
 			return InitializationGraphSnapshot.FromXml(File.ReadAllText(path));
-		}
-
-		private static void TrimOldSnapshots()
-		{
-			IReadOnlyList<string> paths = GetSnapshotPaths();
-			for (int i = MaxStoredSnapshots; i < paths.Count; i++)
-			{
-				File.Delete(paths[i]);
-			}
 		}
 	}
 }

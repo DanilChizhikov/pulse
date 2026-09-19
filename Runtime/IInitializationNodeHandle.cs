@@ -48,9 +48,13 @@ namespace DTech.Pulse
 		IInitializationNodeHandle RemoveDependencies(params Type[] dependencies);
 
 		/// <summary>
-		/// Marks the system as critical, so it is counted by
-		/// <see cref="InitializationContext.OnCriticalSystemsInitialized"/>.
+		/// Marks the system as critical: it is initialized in the first phase of the run, before any non-critical
+		/// system starts, and it is counted by <see cref="InitializationContext.OnCriticalSystemsInitialized"/>.
 		/// </summary>
+		/// <remarks>
+		/// Criticality is propagated up the dependency chain: every transitive dependency of a critical system
+		/// becomes critical as well, and the builder logs a warning listing the systems it promoted.
+		/// </remarks>
 		/// <returns>The same handle, allowing calls to be chained.</returns>
 		IInitializationNodeHandle SetAsCritical();
 
