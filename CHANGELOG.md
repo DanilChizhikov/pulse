@@ -10,7 +10,7 @@
 - Initialization graphs recorded in a development build are sent to the Editor over the player connection
   (`UnityEngine.Networking.PlayerConnection`); no XML is written on the device anymore.
 - Initialization Graph window: **Source** selector (`Editor` / `Device`). `Device` reads snapshots from the
-  connected player, **Request** asks players to resend the last recorded snapshot, and **Save XML...** stores
+  connected player, **Request** asks players to resend the last recorded snapshot, and **Export XML...** stores
   the selected one on disk.
 - Initialization Graph window: Profiler-style connection dropdown for `Device` - every discovered device with
   search, `Play Mode` / `Edit Mode` and `Direct Connection`. A snapshot is requested automatically when a
@@ -27,6 +27,16 @@
   `OnSnapshotRecorded`, so a snapshot still reaches the Editor.
 - Documentation: the manual `persistentDataPath` + `adb pull` / Xcode container workflow is replaced by the
   player connection one.
+- **Breaking behaviour:** recorded graphs are no longer written to `Library/Pulse/Graphs` on their own. The Editor
+  source keeps the last 20 runs in memory (like the Device source does for received ones, cleared on a domain
+  reload), lists them in the **Snapshots** dropdown and writes a file only when **Export XML...** is pressed.
+
+### Removed
+- `Tools/DTech/Pulse/Clear Records` menu item - the in-memory history is dropped by `Clear` in the **Snapshots**
+  dropdown instead.
+- Initialization Graph window: the **Refresh** button, which re-read the snapshot folder from disk.
+- `InitializationGraphStorage.Save` / `GetSnapshotPaths` / `OnSaved` and the rotation that deleted every file past
+  the newest 20 in `Library/Pulse/Graphs`.
 
 ## [2.0.0] - 2026-09-16
 

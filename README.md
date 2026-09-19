@@ -307,9 +307,13 @@ runs are not affected.
 
 **In the Editor** (`Source: Editor` in the window toolbar)
 1. Enable `Tools/DTech/Pulse/Record Initialization Graph` (stored in `EditorPrefs`).
-2. Enter Play Mode. Every time an `InitializationContext` finishes (completed, cancelled or failed), a snapshot is saved
-   to `Library/Pulse/Graphs` (the last 20 snapshots are kept).
+2. Enter Play Mode. Every time an `InitializationContext` finishes (completed, cancelled or failed), a snapshot is kept
+   **in memory** — nothing is written to disk. Contexts initialized at the same time or in parallel produce one entry
+   each; the last 20 are kept and the whole history is cleared on a domain reload (script recompile, entering Play Mode).
 3. Open `Window/DTech/Pulse/Initialization Graph` to browse snapshots:
+   - the **Snapshots** dropdown lists the recorded runs (`#1 · 14:03:12 · Completed`), newest first, and its `Clear`
+     entry drops them;
+   - press **Export XML...** to write the shown graph to a file of your choice, and **Open File...** to read one back;
    - systems are grouped into columns by their dependency level, and the group title shows the span of the level;
    - edges go from a dependency to the systems that depend on it. Edges already implied by another dependency
      (`A → B → C` makes `A → C` redundant) are hidden; enable **All Edges** in the toolbar to draw them too;
@@ -340,7 +344,7 @@ no files are written on the device and nothing has to be pulled off it.
    - **Request** makes the connected player resend the snapshot it recorded last;
    - the second dropdown lists the received snapshots labelled with the device name, filtered to the selected
      device — enable **Show All Devices** in it to see the whole history;
-   - received snapshots are kept in memory only (the last 20, cleared on a domain reload); press **Save XML...**
+   - received snapshots are kept in memory only (the last 20, cleared on a domain reload); press **Export XML...**
      to write the selected one to disk and reopen it later through `Source: Editor` -> **Open File...**.
 
 Notes:
