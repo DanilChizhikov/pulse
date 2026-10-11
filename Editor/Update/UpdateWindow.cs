@@ -52,13 +52,12 @@ namespace DTech.Pulse.Editor.Update
 			ShowWindow();
 		}
 		
-		[MenuItem("Tools/PULSE")]
 		private static void ShowWindow()
 		{
-			// if (WasShownThisSession)
-			// {
-			// 	return;
-			// }
+			if (WasShownThisSession)
+			{
+				return;
+			}
 			
 			var window = GetWindow<UpdateWindow>("Pulse Update");
 			window.minSize = new Vector2(WindowWidth, WindowHeight);
