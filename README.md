@@ -19,6 +19,7 @@
   - [Chaining contexts (scopes)](#chaining-contexts-scopes)
   - [Listening to per-system callbacks](#listening-to-per-system-callbacks)
   - [Recording the initialization graph](#recording-the-initialization-graph)
+  - [Checking for updates](#checking-for-updates)
 - [API Reference](#api-reference)
   - [IInitializable](#iinitializable)
   - [InitDependencyAttribute](#initdependencyattribute)
@@ -48,9 +49,9 @@
     ```
 3. Unity will automatically import the package.
 
-If you want to set a target version, Pulse uses the `v*.*.*` release tag so you can specify a version like #v2.1.0.
+If you want to set a target version, Pulse uses the `v*.*.*` release tag so you can specify a version like #v2.1.1.
 
-For example `https://github.com/DanilChizhikov/pulse.git#v2.1.0`.
+For example `https://github.com/DanilChizhikov/pulse.git#v2.1.1`.
 
 ## Features
 - **Attribute–based dependency discovery**
@@ -129,6 +130,12 @@ For example `https://github.com/DanilChizhikov/pulse.git#v2.1.0`.
   Record dependencies, start order and timings of every system and inspect them in a GraphView window
   (`Window/DTech/Pulse/Initialization Graph`). Disabled by default, so it doesn't affect regular runs.
   Graphs recorded in a development build are read straight from the connected player over the player connection.
+
+
+- **Update notifications (Editor)**
+
+  When a newer Pulse version is released, the **Pulse Update** window shows its release notes and updates
+  `Packages/manifest.json` in one click. See [Checking for updates](#checking-for-updates).
 
 ## Runtime compatibility
 
@@ -384,6 +391,22 @@ Notes:
 - `OnSnapshotRecorded` may be raised on a non-main thread if your systems continue on the thread pool
   (sending to the Editor is deferred to the main thread internally).
 - The measured duration of a system includes its callbacks (`OnStartInitialize` / `OnCompleteInitialize` and context events).
+
+### Checking for updates
+When the Editor loads, Pulse looks up the latest released version: GitHub tags if the package is installed from the
+Git URL, `package.openupm.com` if it is installed from a registry. If that version is newer than the installed one,
+the **Pulse Update** window opens (once per Editor session) with both versions and the release notes of the new one:
+- **Update** points the `com.dtech.pulse` entry of `Packages/manifest.json` at the new version — a Git URL gets the
+  `#vX.Y.Z` tag, a registry entry gets the plain version — and Unity re-resolves the package;
+- **Skip Version** hides the window until a version newer than this one is released;
+- **Skip Always** turns the automatic check off.
+
+Both skip choices are stored in `EditorPrefs`. `Tools/DTech/Pulse/Check Update` runs the check on demand and ignores them.
+
+Notes:
+- The check needs internet access to `api.github.com` or `package.openupm.com`.
+- It works only for a package installed through the Package Manager (Git URL or registry). A copy imported from the
+  .unitypackage into `Assets` is not checked.
 
 ## API Reference
 This section covers the main public types. Internal types are not part of the public API and may change.
