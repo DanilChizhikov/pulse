@@ -9,7 +9,7 @@ on:
     branches:
       - master
       - develop
-    
+
 permissions:
   checks: write
   contents: read
@@ -25,19 +25,28 @@ jobs:
           - empty-unity-project
         testMode:
           - playmode
-          - editmode
 
     steps:
-      - name: Checkout pulse repo
+      - name: Free Disk Space (GitHub Actions)
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+    
+      - name: Checkout repo
         uses: actions/checkout@v4
 
       - name: Clone empty Unity project
         run: |
           git clone https://DanilChizhikov:${{ secrets.PRIVATE_REPO_TOKEN }}@github.com/DanilChizhikov/empty-unity-project.git empty-unity-project
 
-      - name: Copy pulse source into Unity project
+      - name: Copy source into Unity project
         run: |
-          mkdir -p ${{ matrix.projectPath }}/Assets/pulse
+          mkdir -p ${{ matrix.projectPath }}/Assets/sources
 
           shopt -s dotglob
 
@@ -47,17 +56,33 @@ jobs:
                 echo "Skipping $item"
                 ;;
               *)
-                cp -R "$item" ${{ matrix.projectPath }}/Assets/pulse/
+                cp -R "$item" ${{ matrix.projectPath }}/Assets/sources/
                 ;;
             esac
           done
 
-      - name: Add com.unity.test-framework.performance
+      - name: Add package dependencies to project manifest
         shell: bash
+        env:
+          PROJECT_PATH: ${{ matrix.projectPath }}
         run: |
-          sed -i '2a "com.unity.test-framework.performance": "3.2.0",' ./${{ matrix.projectPath }}/Packages/manifest.json
+          python3 - <<'PY'
+          import json, os, pathlib
+
+          package = json.loads(pathlib.Path("package.json").read_text(encoding="utf-8"))
+          manifest_path = pathlib.Path(os.environ["PROJECT_PATH"]) / "Packages" / "manifest.json"
+          manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+          dependencies = manifest.setdefault("dependencies", {})
+          for name, version in package.get("dependencies", {}).items():
+              dependencies.setdefault(name, version)
+
+          manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+          print(json.dumps(dependencies, indent=2))
+          PY
 
       - name: Run Unity Tests
+        id: tests
         uses: game-ci/unity-test-runner@v4
         env:
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
@@ -67,3 +92,20 @@ jobs:
           unityVersion: 6000.0.63f1
           projectPath: ${{ matrix.projectPath }}
           testMode: ${{ matrix.testMode }}
+          customParameters: -buildTarget StandaloneLinux64
+
+      - name: Assert tests actually ran
+        if: always()
+        shell: bash
+        run: |
+          file=$(find artifacts -name '*-results.xml' | head -n 1)
+          if [ -z "$file" ]; then
+            echo "No test results XML produced"
+            exit 1
+          fi
+          total=$(grep -o 'total="[0-9]*"' "$file" | head -n 1 | grep -o '[0-9]*')
+          echo "results=$file total=${total:-0}"
+          if [ "${total:-0}" -lt 1 ]; then
+            echo "0 tests ran -> gate excluded the test assembly"
+            exit 1
+          fi

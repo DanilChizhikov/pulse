@@ -16,8 +16,10 @@
   - [Declare dependencies via attributes](#declare-dependencies-via-attributes)
   - [Build an initialization context](#build-an-initialization-context)
   - [Tuning dependencies manually](#tuning-dependencies-manually)
+  - [Chaining contexts (scopes)](#chaining-contexts-scopes)
   - [Listening to per-system callbacks](#listening-to-per-system-callbacks)
   - [Recording the initialization graph](#recording-the-initialization-graph)
+  - [Checking for updates](#checking-for-updates)
 - [API Reference](#api-reference)
   - [IInitializable](#iinitializable)
   - [InitDependencyAttribute](#initdependencyattribute)
@@ -47,9 +49,9 @@
     ```
 3. Unity will automatically import the package.
 
-If you want to set a target version, Pulse uses the `v*.*.*` release tag so you can specify a version like #v2.1.0.
+If you want to set a target version, Pulse uses the `v*.*.*` release tag so you can specify a version like #v2.1.1.
 
-For example `https://github.com/DanilChizhikov/pulse.git#v2.1.0`.
+For example `https://github.com/DanilChizhikov/pulse.git#v2.1.1`.
 
 ## Features
 - **Attribute–based dependency discovery**
@@ -71,7 +73,8 @@ For example `https://github.com/DanilChizhikov/pulse.git#v2.1.0`.
 
 - **Strong validation of dependencies**
   During `Build()` Initialization:
-  - verifies that every declared dependency has a corresponding system registered via `AddSystem`;
+  - verifies that every declared dependency has a corresponding system registered via `AddSystem`
+    or already initialized in a parent context (`SetParent`);
   - detects **cyclic dependencies** and fails fast with a clear error.
 
   This prevents situations where initialization silently “hangs” due to unresolved or circular dependencies.
@@ -127,6 +130,12 @@ For example `https://github.com/DanilChizhikov/pulse.git#v2.1.0`.
   Record dependencies, start order and timings of every system and inspect them in a GraphView window
   (`Window/DTech/Pulse/Initialization Graph`). Disabled by default, so it doesn't affect regular runs.
   Graphs recorded in a development build are read straight from the connected player over the player connection.
+
+
+- **Update notifications (Editor)**
+
+  When a newer Pulse version is released, the **Pulse Update** window shows its release notes and updates
+  `Packages/manifest.json` in one click. See [Checking for updates](#checking-for-updates).
 
 ## Runtime compatibility
 
@@ -292,6 +301,25 @@ builder.AddSystem(auth).AddDependency<DatabaseSystem>(); // DatabaseSystem not a
 var context = builder.Build();
 ```
 
+### Chaining contexts (scopes)
+When systems are initialized in several scopes (e.g. a project scope and a scene scope), a system of the inner scope
+may depend on a system that the outer scope has already initialized. Pass the outer context to `SetParent`:
+a dependency that is not registered in the builder is looked up in the parent context and its own parents and is
+treated as already satisfied. A system registered in the builder itself takes precedence over the parent ones.
+```csharp
+var projectBuilder = new InitializationContextBuilder();
+projectBuilder.AddSystem(new ResourceService());
+InitializationContext projectContext = projectBuilder.Build();
+await projectContext.InitializationAsync(token);
+
+var sceneBuilder = new InitializationContextBuilder().SetParent(projectContext);
+sceneBuilder.AddSystem(new ScreenSystem()); // depends on IResourceService via [InitDependency]
+InitializationContext sceneContext = sceneBuilder.Build();
+await sceneContext.InitializationAsync(token);
+```
+
+The parent context must be initialized before the child one is run, otherwise `InitializationAsync` throws.
+
 ### Listening to per-system callbacks
 You can attach callbacks to know when a specific system starts or completes initialization:
 ```csharp
@@ -364,6 +392,22 @@ Notes:
   (sending to the Editor is deferred to the main thread internally).
 - The measured duration of a system includes its callbacks (`OnStartInitialize` / `OnCompleteInitialize` and context events).
 
+### Checking for updates
+When the Editor loads, Pulse looks up the latest released version: GitHub tags if the package is installed from the
+Git URL, `package.openupm.com` if it is installed from a registry. If that version is newer than the installed one,
+the **Pulse Update** window opens (once per Editor session) with both versions and the release notes of the new one:
+- **Update** points the `com.dtech.pulse` entry of `Packages/manifest.json` at the new version — a Git URL gets the
+  `#vX.Y.Z` tag, a registry entry gets the plain version — and Unity re-resolves the package;
+- **Skip Version** hides the window until a version newer than this one is released;
+- **Skip Always** turns the automatic check off.
+
+Both skip choices are stored in `EditorPrefs`. `Tools/DTech/Pulse/Check Update` runs the check on demand and ignores them.
+
+Notes:
+- The check needs internet access to `api.github.com` or `package.openupm.com`.
+- It works only for a package installed through the Package Manager (Git URL or registry). A copy imported from the
+  .unitypackage into `Assets` is not checked.
+
 ## API Reference
 This section covers the main public types. Internal types are not part of the public API and may change.
 
@@ -419,6 +463,7 @@ public sealed class InitializationContextBuilder
 {
     public IInitializationNodeHandle AddSystem(IInitializable system);
     public InitializationContextBuilder SetFramePacer(IInitializationFramePacer framePacer);
+    public InitializationContextBuilder SetParent(InitializationContext parent);
     public InitializationContext Build();
 }
 ```
@@ -454,10 +499,23 @@ var builder = new InitializationContextBuilder();
 builder.SetFramePacer(new PlayerLoopFramePacer(maxFrameSeconds: 0.1f));
 ```
 
+#### `SetParent(InitializationContext parent)`
+Sets the context whose systems are already initialized when this one runs (see
+[Chaining contexts](#chaining-contexts-scopes)). Dependencies missing in the builder are resolved against the parent
+chain; a match there adds no edge to the graph. Pass `null` (the default) to resolve only among the builder's systems.
+
+**Example:**
+```csharp
+var builder = new InitializationContextBuilder().SetParent(projectContext);
+```
+
 #### Build()
 Builds and validates the dependency graph and returns an `InitializationContext`.
 Validation performed during `Build()`:
-- **Missing dependencies**: if any system depends on a type that has no matching system registered, Build() throws an exception.
+- **Missing dependencies**: if any system depends on a type that has no matching system registered and no matching
+  system in the parent contexts, `Build()` throws an exception.
+- **Ambiguous dependencies**: if a dependency matches several systems of the builder (or of the same parent context),
+  `Build()` throws an exception.
 - **Cyclic dependencies**: if a cycle is detected, `Build()` throws an exception with the list of involved systems.
 
 ### InitializationContext
@@ -523,6 +581,7 @@ float progress = (float)context.InitializedSystemsCount / context.TotalSystemsCo
 
 #### InitializationAsync(CancellationToken token)
 Runs initialization:
+- Throws `InvalidOperationException` if the parent context (see `SetParent`) has not been initialized yet.
 - Every system starts as soon as its own dependencies are initialized; independent systems run in parallel.
 - If a system throws, no new system is started, the already running ones are awaited and the exception is rethrown.
 - If `token` is canceled:

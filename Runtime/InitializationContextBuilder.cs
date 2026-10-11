@@ -19,6 +19,7 @@ namespace DTech.Pulse
 		private readonly Dictionary<Type, InitializationNode> _nodesByType = new();
 
 		private IInitializationFramePacer _framePacer;
+		private InitializationContext _parent;
 		private bool _isBuilt;
 
 		/// <summary>
@@ -76,6 +77,26 @@ namespace DTech.Pulse
 		}
 
 		/// <summary>
+		/// Sets the context whose systems are already initialized by the time this one runs, e.g. the context of a
+		/// parent scope. A dependency that is not registered in this builder is looked up in the parent context and
+		/// its own parents; when found there it is treated as satisfied. A system registered in this builder takes
+		/// precedence over the parent ones. The parent context must be initialized before this context is run.
+		/// </summary>
+		/// <param name="parent">Parent context, or null to resolve dependencies only among the systems of this builder.</param>
+		/// <returns>The same builder, allowing calls to be chained.</returns>
+		/// <exception cref="InvalidOperationException">Thrown when the context is already built.</exception>
+		public InitializationContextBuilder SetParent(InitializationContext parent)
+		{
+			if (_isBuilt)
+			{
+				throw new InvalidOperationException("This builder has already built an initialization context.");
+			}
+
+			_parent = parent;
+			return this;
+		}
+
+		/// <summary>
 		/// Validates the dependency graph and creates the context.
 		/// </summary>
 		/// <returns>The initialization context ready to be run.</returns>
@@ -110,7 +131,8 @@ namespace DTech.Pulse
 				dependents,
 				criticalSystemsCount,
 				graphRecorder,
-				_framePacer);
+				_framePacer,
+				_parent);
 		}
 
 		private void BuildPlan(
@@ -140,6 +162,11 @@ namespace DTech.Pulse
 				for (int j = 0; j < dependencies.Count; j++)
 				{
 					InitializationNode dependencyNode = ResolveDependencyNode(node, dependencies[j]);
+					if (dependencyNode == null)
+					{
+						continue;
+					}
+
 					int dependencyIndex = indices[dependencyNode];
 					(dependentLists[dependencyIndex] ??= new List<int>()).Add(i);
 					(dependencyLists[i] ??= new List<int>()).Add(dependencyIndex);
@@ -254,6 +281,18 @@ namespace DTech.Pulse
 			throw new InvalidOperationException("Cyclic dependencies detected: " + string.Join(", ", cycleNames));
 		}
 
+		private static InvalidOperationException CreateAmbiguousDependencyException(
+			InitializationNode node,
+			Type dependencyType,
+			IEnumerable<Type> candidateTypes)
+		{
+			string candidateNames = string.Join(", ", candidateTypes.Select(candidateType => candidateType.FullName));
+			return new InvalidOperationException(
+				$"System '{node.SystemType.FullName}' has dependency '{dependencyType.FullName}', " +
+				$"but it matches multiple registered systems: {candidateNames}. " +
+				"Register a concrete dependency type or remove the ambiguity.");
+		}
+
 		private InitializationNode ResolveDependencyNode(InitializationNode node, Type dependencyType)
 		{
 			if (_nodesByType.TryGetValue(dependencyType, out InitializationNode exactNode))
@@ -271,16 +310,48 @@ namespace DTech.Pulse
 
 			if (candidates.Count > 1)
 			{
-				string candidateNames = string.Join(", ", candidates.Select(candidate => candidate.SystemType.FullName));
-				throw new InvalidOperationException(
-					$"System '{node.SystemType.FullName}' has dependency '{dependencyType.FullName}', " +
-					$"but it matches multiple registered systems: {candidateNames}. " +
-					"Register a concrete dependency type or remove the ambiguity.");
+				throw CreateAmbiguousDependencyException(
+					node,
+					dependencyType,
+					candidates.Select(candidate => candidate.SystemType));
+			}
+
+			if (IsProvidedByParent(node, dependencyType))
+			{
+				return null;
 			}
 
 			throw new InvalidOperationException($"System '{node.SystemType.FullName}' has dependency '{dependencyType.FullName}' " +
 				$"which was not added to '{nameof(InitializationContextBuilder)}'. " +
-				"All dependencies must be registered via AddSystem before Build is called.");
+				"All dependencies must be registered via AddSystem before Build is called " +
+				"or provided by a parent context set via SetParent.");
+		}
+
+		private bool IsProvidedByParent(InitializationNode node, Type dependencyType)
+		{
+			for (InitializationContext parent = _parent; parent != null; parent = parent.Parent)
+			{
+				Type[] systemTypes = parent.SystemTypes;
+				if (Array.IndexOf(systemTypes, dependencyType) >= 0)
+				{
+					return true;
+				}
+
+				Type[] candidates = systemTypes
+					.Where(systemType => dependencyType.IsAssignableFrom(systemType))
+					.ToArray();
+				if (candidates.Length == 1)
+				{
+					return true;
+				}
+
+				if (candidates.Length > 1)
+				{
+					throw CreateAmbiguousDependencyException(node, dependencyType, candidates);
+				}
+			}
+
+			return false;
 		}
 	}
 }
