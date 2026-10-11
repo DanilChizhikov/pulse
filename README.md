@@ -16,6 +16,7 @@
   - [Declare dependencies via attributes](#declare-dependencies-via-attributes)
   - [Build an initialization context](#build-an-initialization-context)
   - [Tuning dependencies manually](#tuning-dependencies-manually)
+  - [Chaining contexts (scopes)](#chaining-contexts-scopes)
   - [Listening to per-system callbacks](#listening-to-per-system-callbacks)
   - [Recording the initialization graph](#recording-the-initialization-graph)
 - [API Reference](#api-reference)
@@ -71,7 +72,8 @@ For example `https://github.com/DanilChizhikov/pulse.git#v2.1.0`.
 
 - **Strong validation of dependencies**
   During `Build()` Initialization:
-  - verifies that every declared dependency has a corresponding system registered via `AddSystem`;
+  - verifies that every declared dependency has a corresponding system registered via `AddSystem`
+    or already initialized in a parent context (`SetParent`);
   - detects **cyclic dependencies** and fails fast with a clear error.
 
   This prevents situations where initialization silently “hangs” due to unresolved or circular dependencies.
@@ -292,6 +294,25 @@ builder.AddSystem(auth).AddDependency<DatabaseSystem>(); // DatabaseSystem not a
 var context = builder.Build();
 ```
 
+### Chaining contexts (scopes)
+When systems are initialized in several scopes (e.g. a project scope and a scene scope), a system of the inner scope
+may depend on a system that the outer scope has already initialized. Pass the outer context to `SetParent`:
+a dependency that is not registered in the builder is looked up in the parent context and its own parents and is
+treated as already satisfied. A system registered in the builder itself takes precedence over the parent ones.
+```csharp
+var projectBuilder = new InitializationContextBuilder();
+projectBuilder.AddSystem(new ResourceService());
+InitializationContext projectContext = projectBuilder.Build();
+await projectContext.InitializationAsync(token);
+
+var sceneBuilder = new InitializationContextBuilder().SetParent(projectContext);
+sceneBuilder.AddSystem(new ScreenSystem()); // depends on IResourceService via [InitDependency]
+InitializationContext sceneContext = sceneBuilder.Build();
+await sceneContext.InitializationAsync(token);
+```
+
+The parent context must be initialized before the child one is run, otherwise `InitializationAsync` throws.
+
 ### Listening to per-system callbacks
 You can attach callbacks to know when a specific system starts or completes initialization:
 ```csharp
@@ -419,6 +440,7 @@ public sealed class InitializationContextBuilder
 {
     public IInitializationNodeHandle AddSystem(IInitializable system);
     public InitializationContextBuilder SetFramePacer(IInitializationFramePacer framePacer);
+    public InitializationContextBuilder SetParent(InitializationContext parent);
     public InitializationContext Build();
 }
 ```
@@ -454,10 +476,23 @@ var builder = new InitializationContextBuilder();
 builder.SetFramePacer(new PlayerLoopFramePacer(maxFrameSeconds: 0.1f));
 ```
 
+#### `SetParent(InitializationContext parent)`
+Sets the context whose systems are already initialized when this one runs (see
+[Chaining contexts](#chaining-contexts-scopes)). Dependencies missing in the builder are resolved against the parent
+chain; a match there adds no edge to the graph. Pass `null` (the default) to resolve only among the builder's systems.
+
+**Example:**
+```csharp
+var builder = new InitializationContextBuilder().SetParent(projectContext);
+```
+
 #### Build()
 Builds and validates the dependency graph and returns an `InitializationContext`.
 Validation performed during `Build()`:
-- **Missing dependencies**: if any system depends on a type that has no matching system registered, Build() throws an exception.
+- **Missing dependencies**: if any system depends on a type that has no matching system registered and no matching
+  system in the parent contexts, `Build()` throws an exception.
+- **Ambiguous dependencies**: if a dependency matches several systems of the builder (or of the same parent context),
+  `Build()` throws an exception.
 - **Cyclic dependencies**: if a cycle is detected, `Build()` throws an exception with the list of involved systems.
 
 ### InitializationContext
@@ -523,6 +558,7 @@ float progress = (float)context.InitializedSystemsCount / context.TotalSystemsCo
 
 #### InitializationAsync(CancellationToken token)
 Runs initialization:
+- Throws `InvalidOperationException` if the parent context (see `SetParent`) has not been initialized yet.
 - Every system starts as soon as its own dependencies are initialized; independent systems run in parallel.
 - If a system throws, no new system is started, the already running ones are awaited and the exception is rethrown.
 - If `token` is canceled:

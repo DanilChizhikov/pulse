@@ -75,14 +75,28 @@ namespace DTech.Pulse
 		private bool _isCriticalSystemsInitializedEventInvoked;
 		private bool _isCriticalPhaseCompleted;
 
+		internal InitializationContext Parent { get; }
+
+		internal Type[] SystemTypes { get; }
+
+		internal bool IsCompleted { get; private set; }
+
 		internal InitializationContext(
 			InitializationNode[] nodes,
 			int[] blockingDependencies,
 			int[][] dependents,
 			int criticalSystemsCount,
 			InitializationGraphRecorder graphRecorder,
-			IInitializationFramePacer framePacer)
+			IInitializationFramePacer framePacer,
+			InitializationContext parent)
 		{
+			Parent = parent;
+			SystemTypes = new Type[nodes.Length];
+			for (int i = 0; i < nodes.Length; i++)
+			{
+				SystemTypes[i] = nodes[i].SystemType;
+			}
+
 			_nodes = nodes;
 			_blockingDependencies = blockingDependencies;
 			_dependents = dependents;
@@ -113,6 +127,12 @@ namespace DTech.Pulse
 				throw new InvalidOperationException("This initialization context can only be run once.");
 			}
 
+			if (Parent != null && !Parent.IsCompleted)
+			{
+				throw new InvalidOperationException(
+					"The parent initialization context must be initialized before this one.");
+			}
+
 			_isInitializationStarted = true;
 			_completionSource = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -140,6 +160,7 @@ namespace DTech.Pulse
 
 			if (graphStatus == InitializationGraphStatus.Completed)
 			{
+				IsCompleted = true;
 				Array.Clear(_nodes, 0, _nodes.Length);
 			}
 		}
