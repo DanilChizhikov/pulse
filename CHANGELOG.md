@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [2.1.1] - 2026-10-11
 
 ### Added
 - `InitializationContextBuilder.SetParent(InitializationContext)`: chains contexts of several scopes. A dependency
@@ -9,6 +9,17 @@
   `Build()` throw "which was not added to 'InitializationContextBuilder'".
 - `InitializationContext.InitializationAsync` throws `InvalidOperationException` when its parent context has not been
   initialized yet.
+- **Pulse Update** window: when the Editor loads, Pulse looks up the latest released version - GitHub tags for a Git
+  install, `package.openupm.com` for a registry install - and, if it is newer, opens once per session with the current
+  and the new version and the release notes of the new one. **Update** points the `com.dtech.pulse` entry of
+  `Packages/manifest.json` at the new version (`#vX.Y.Z` for a Git URL, the plain version for a registry),
+  **Skip Version** hides the window until a later version is out, **Skip Always** turns the automatic check off
+  (both choices are stored in `EditorPrefs`).
+- `Tools/DTech/Pulse/Check Update` menu item: checks for a new version on demand, ignoring **Skip Version** /
+  **Skip Always**.
+
+### Changed
+- The `Build()` error for a dependency that is not registered now also points at `SetParent`.
 
 ## [2.1.0] - 2026-09-19
 
