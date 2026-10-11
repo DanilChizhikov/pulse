@@ -582,6 +582,131 @@ namespace DTech.Pulse.Tests
             Assert.AreEqual(2, context.InitializedCriticalSystemsCount);
         }
 
+        [Test]
+        public void Build_ShouldResolveDependency_FromParentContext()
+        {
+            InitializationContext parent = CreateInitializedContext(new DepA());
+            var builder = new InitializationContextBuilder().SetParent(parent);
+            bool dummyInitialized = false;
+
+            builder.AddSystem(new DummySystem())
+                   .AddDependency<DepA>()
+                   .OnCompleteInitialize(type => dummyInitialized = true);
+
+            InitializationContext context = builder.Build();
+            context.InitializationAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+            Assert.IsTrue(dummyInitialized, "System depending on a parent system must be initialized.");
+        }
+
+        [Test]
+        public void Build_ShouldResolveInterfaceDependency_FromParentContext()
+        {
+            InitializationContext parent = CreateInitializedContext(new DepA());
+            var builder = new InitializationContextBuilder().SetParent(parent);
+
+            builder.AddSystem(new DummySystem()).AddDependency<IBaseDep>();
+
+            Assert.DoesNotThrow(() => builder.Build());
+        }
+
+        [Test]
+        public void Build_ShouldResolveDependency_FromGrandparentContext()
+        {
+            InitializationContext grandparent = CreateInitializedContext(new DepA());
+            var parentBuilder = new InitializationContextBuilder().SetParent(grandparent);
+            parentBuilder.AddSystem(new DepB());
+            InitializationContext parent = parentBuilder.Build();
+            parent.InitializationAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+            var builder = new InitializationContextBuilder().SetParent(parent);
+            builder.AddSystem(new DummySystem()).AddDependency<DepA>();
+
+            Assert.DoesNotThrow(() => builder.Build());
+        }
+
+        [Test]
+        public void Build_ShouldPreferLocalSystem_OverParent()
+        {
+            InitializationContext parent = CreateInitializedContext(new DepA());
+            var builder = new InitializationContextBuilder().SetParent(parent);
+            var initOrder = new List<Type>();
+
+            builder.AddSystem(new DummySystem())
+                   .AddDependency<DepA>()
+                   .OnStartInitialize(type => initOrder.Add(type));
+            builder.AddSystem(new DepA())
+                   .OnStartInitialize(type => initOrder.Add(type));
+
+            InitializationContext context = builder.Build();
+            context.InitializationAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+            Assert.That(initOrder.IndexOf(typeof(DummySystem)), Is.GreaterThan(initOrder.IndexOf(typeof(DepA))));
+        }
+
+        [Test]
+        public void Build_ShouldThrow_WhenDependencyIsAmbiguousInParent()
+        {
+            InitializationContext parent = CreateInitializedContext(new DepA(), new DepB());
+            var builder = new InitializationContextBuilder().SetParent(parent);
+
+            builder.AddSystem(new DummySystem()).AddDependency<IBaseDep>();
+
+            var exception = Assert.Throws<InvalidOperationException>(() => builder.Build());
+            StringAssert.Contains("matches multiple registered systems", exception!.Message);
+        }
+
+        [Test]
+        public void Build_ShouldThrow_WhenDependencyIsMissingInParent()
+        {
+            InitializationContext parent = CreateInitializedContext(new DepB());
+            var builder = new InitializationContextBuilder().SetParent(parent);
+
+            builder.AddSystem(new DummySystem()).AddDependency<DepA>();
+
+            var exception = Assert.Throws<InvalidOperationException>(() => builder.Build());
+            StringAssert.Contains("which was not added", exception!.Message);
+        }
+
+        [Test]
+        public void InitializationAsync_ShouldThrow_WhenParentIsNotInitialized()
+        {
+            var parentBuilder = new InitializationContextBuilder();
+            parentBuilder.AddSystem(new DepA());
+            InitializationContext parent = parentBuilder.Build();
+
+            var builder = new InitializationContextBuilder().SetParent(parent);
+            builder.AddSystem(new DummySystem()).AddDependency<DepA>();
+            InitializationContext context = builder.Build();
+
+            var exception = Assert.Throws<InvalidOperationException>(
+                () => context.InitializationAsync(CancellationToken.None).GetAwaiter().GetResult());
+            StringAssert.Contains("parent initialization context must be initialized", exception!.Message);
+        }
+
+        [Test]
+        public void SetParent_ShouldThrow_AfterBuild()
+        {
+            var builder = new InitializationContextBuilder();
+            builder.AddSystem(new DummySystem());
+            builder.Build();
+
+            Assert.Throws<InvalidOperationException>(() => builder.SetParent(null));
+        }
+
+        private static InitializationContext CreateInitializedContext(params IInitializable[] systems)
+        {
+            var builder = new InitializationContextBuilder();
+            for (int i = 0; i < systems.Length; i++)
+            {
+                builder.AddSystem(systems[i]);
+            }
+
+            InitializationContext context = builder.Build();
+            context.InitializationAsync(CancellationToken.None).GetAwaiter().GetResult();
+            return context;
+        }
+
         private object CreateNode()
         {
             var dummy = new DummySystem();

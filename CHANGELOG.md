@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- `InitializationContextBuilder.SetParent(InitializationContext)`: chains contexts of several scopes. A dependency
+  that is not registered in the builder is looked up in the parent context and its own parents and is treated as
+  already initialized; a system registered in the builder takes precedence. Previously such a dependency made
+  `Build()` throw "which was not added to 'InitializationContextBuilder'".
+- `InitializationContext.InitializationAsync` throws `InvalidOperationException` when its parent context has not been
+  initialized yet.
+
 ## [2.1.0] - 2026-09-19
 
 ### Added
