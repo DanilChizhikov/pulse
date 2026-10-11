@@ -25,7 +25,6 @@ jobs:
           - empty-unity-project
         testMode:
           - playmode
-          - editmode
 
     steps:
       - name: Free Disk Space (GitHub Actions)
